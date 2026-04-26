@@ -13,13 +13,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-// THÊM: Dùng Hook insets thay vì SafeAreaView để không bị crash
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function StudyScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-  const insets = useSafeAreaInsets(); // Lấy chiều cao của Status Bar/Tai thỏ
+  const insets = useSafeAreaInsets();
 
   const [queue, setQueue] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);

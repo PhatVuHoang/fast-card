@@ -1,7 +1,9 @@
 import { db, setupDb } from "@db/client";
 import { decks } from "@db/schema";
+import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Link } from "expo-router";
+import { useColorScheme } from "nativewind";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,6 +18,8 @@ export default function Home() {
   const [allDecks, setAllDecks] = useState<any[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const { colorScheme, setColorScheme } = useColorScheme();
+  const isDark = colorScheme === "dark";
 
   useEffect(() => {
     const init = async () => {
@@ -44,30 +48,50 @@ export default function Home() {
   if (!isReady) return null;
 
   return (
-    <SafeAreaView className="flex-1 bg-gradient-to-b from-indigo-50 to-white">
+    <SafeAreaView className="flex-1 bg-indigo-50 dark:bg-slate-950">
       <View className="flex-1">
         {/* Header */}
         <View className="px-6 pt-2 pb-6">
           <View className="flex-row justify-between items-center gap-3">
             <View className="flex-1">
-              <Text className="text-4xl font-black text-indigo-950 tracking-tight">
+              <Text className="text-4xl font-black text-indigo-950 dark:text-white tracking-tight">
                 My Decks
               </Text>
-              <Text className="text-indigo-600 text-sm font-medium mt-1">
+              <Text className="text-indigo-600 dark:text-indigo-400 text-sm font-medium mt-1">
                 {allDecks.length} deck{allDecks.length !== 1 ? "s" : ""} •{" "}
                 {allDecks.reduce((sum, d) => sum + (d.cardCount || 0), 0)} cards
               </Text>
             </View>
 
-            <Link href="/import" asChild>
+            <View className="flex-row items-center gap-3">
+              {/* Dark Mode Toggle */}
               <TouchableOpacity
-                onPress={handleNewDeck}
-                className="bg-gradient-to-br from-indigo-500 to-indigo-600 px-5 py-4 rounded-2xl shadow-lg shadow-indigo-200 active:shadow-md active:scale-95 transition-all"
-                activeOpacity={0.8}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setColorScheme(isDark ? "light" : "dark");
+                }}
+                className="bg-indigo-100 dark:bg-slate-800 p-3 rounded-full"
+                accessibilityRole="button"
+                accessibilityLabel={`Switch to ${isDark ? "light" : "dark"} mode`}
               >
-                <Text className="text-white font-bold text-base">+ New</Text>
+                <Ionicons
+                  name={isDark ? "sunny" : "moon"}
+                  size={20}
+                  color={isDark ? "#818CF8" : "#4F46E5"}
+                />
               </TouchableOpacity>
-            </Link>
+
+              {/* New Deck Button */}
+              <Link href="/import" asChild>
+                <TouchableOpacity
+                  onPress={handleNewDeck}
+                  className="bg-indigo-600 dark:bg-indigo-500 px-5 py-4 rounded-2xl shadow-lg shadow-indigo-200 active:shadow-md active:scale-95 transition-all"
+                  activeOpacity={0.8}
+                >
+                  <Text className="text-white font-bold text-base">+ New</Text>
+                </TouchableOpacity>
+              </Link>
+            </View>
           </View>
         </View>
 
@@ -76,23 +100,23 @@ export default function Home() {
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator
               size="large"
-              color="#4F46E5"
+              color={isDark ? "#818CF8" : "#4F46E5"}
               accessibilityLabel="Loading decks"
             />
-            <Text className="text-indigo-600 font-medium mt-3">
+            <Text className="text-indigo-600 dark:text-indigo-400 font-medium mt-3">
               Loading your decks...
             </Text>
           </View>
         ) : allDecks.length === 0 ? (
           /* Empty State */
           <View className="flex-1 items-center justify-center px-6">
-            <View className="w-20 h-20 bg-indigo-100 rounded-full items-center justify-center mb-4">
+            <View className="w-20 h-20 bg-indigo-100 dark:bg-indigo-900 rounded-full items-center justify-center mb-4">
               <Text className="text-3xl">📚</Text>
             </View>
-            <Text className="text-2xl font-black text-slate-800 text-center mb-2">
+            <Text className="text-2xl font-black text-slate-800 dark:text-slate-100 text-center mb-2">
               No Decks Yet
             </Text>
-            <Text className="text-slate-600 text-center mb-6 leading-5">
+            <Text className="text-slate-600 dark:text-slate-400 text-center mb-6 leading-5">
               Create your first deck to start learning with spaced repetition.
             </Text>
             <Link href="/import" asChild>
@@ -116,7 +140,7 @@ export default function Home() {
               <Link href={`/study?id=${item.id}`} asChild>
                 <TouchableOpacity
                   onPress={handleDeckPress}
-                  className="mx-5 mb-4 bg-white rounded-3xl overflow-hidden shadow-md active:shadow-xl active:scale-98 transition-all"
+                  className="mx-5 mb-4 bg-white dark:bg-slate-900 rounded-3xl overflow-hidden shadow-md active:shadow-xl active:scale-98 transition-all"
                   activeOpacity={0.8}
                   accessibilityRole="button"
                   accessibilityLabel={`${item.name} deck with ${item.cardCount || 0} cards and ${item.masteredCount || 0}% mastery`}
@@ -125,20 +149,20 @@ export default function Home() {
                     {/* Card Header */}
                     <View className="flex-row justify-between items-start gap-4 mb-4">
                       <View className="flex-1">
-                        <Text className="text-2xl font-black text-indigo-950 mb-1">
+                        <Text className="text-2xl font-black text-indigo-950 dark:text-white mb-1">
                           {item.name}
                         </Text>
-                        <Text className="text-indigo-600 text-sm font-semibold">
+                        <Text className="text-indigo-600 dark:text-indigo-400 text-sm font-semibold">
                           {item.cardCount || 0} cards
                         </Text>
                       </View>
 
                       {/* Mastery Badge */}
-                      <View className="bg-gradient-to-br from-green-50 to-green-100 px-4 py-2 rounded-xl">
-                        <Text className="text-green-700 font-black text-lg">
+                      <View className="bg-green-50 dark:bg-green-950 px-4 py-2 rounded-xl">
+                        <Text className="text-green-700 dark:text-green-400 font-black text-lg">
                           {item.masteredCount || 0}%
                         </Text>
-                        <Text className="text-green-600 text-xs font-medium">
+                        <Text className="text-green-600 dark:text-green-500 text-xs font-medium">
                           Mastery
                         </Text>
                       </View>
@@ -146,16 +170,16 @@ export default function Home() {
 
                     {/* Progress Bar */}
                     <View className="mb-1">
-                      <View className="h-3 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                      <View className="h-3 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
                         <View
-                          className="h-full bg-gradient-to-r from-green-400 to-green-500 rounded-full transition-all"
+                          className="h-full bg-green-400 dark:bg-green-500 rounded-full"
                           style={{
                             width: `${Math.max(item.masteredCount || 0, 5)}%`,
                           }}
                         />
                       </View>
                     </View>
-                    <Text className="text-xs text-slate-500 font-medium text-right">
+                    <Text className="text-xs text-slate-500 dark:text-slate-400 font-medium text-right">
                       {Math.round(item.masteredCount || 0)}% of cards mastered
                     </Text>
                   </View>

@@ -4,6 +4,7 @@ import { cards } from "@db/schema";
 import { eq } from "drizzle-orm";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useColorScheme } from "nativewind";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -23,6 +24,8 @@ export default function StudyScreen() {
   const [completedCount, setCompletedCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isAnswering, setIsAnswering] = useState(false);
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === "dark";
 
   useEffect(() => {
     const loadCards = async () => {
@@ -99,10 +102,13 @@ export default function StudyScreen() {
   // Loading State
   if (isLoading) {
     return (
-      <SafeAreaView className="flex-1 bg-gradient-to-b from-indigo-50 to-white">
+      <SafeAreaView className="flex-1 bg-indigo-50 dark:bg-slate-950">
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#4F46E5" />
-          <Text className="text-indigo-600 font-medium mt-3">
+          <ActivityIndicator
+            size="large"
+            color={isDark ? "#818CF8" : "#4F46E5"}
+          />
+          <Text className="text-indigo-600 dark:text-indigo-400 font-medium mt-3">
             Loading cards...
           </Text>
         </View>
@@ -116,7 +122,7 @@ export default function StudyScreen() {
     (queue.length > 0 && completedCount === queue.length)
   ) {
     return (
-      <SafeAreaView className="flex-1 bg-gradient-to-b from-green-50 to-white">
+      <SafeAreaView className="flex-1 bg-green-50 dark:bg-slate-950">
         <ScrollView
           contentContainerStyle={{ flexGrow: 1 }}
           className="flex-1 items-center justify-center px-6"
@@ -125,33 +131,33 @@ export default function StudyScreen() {
             <Text className="text-5xl">🎉</Text>
           </View>
 
-          <Text className="text-4xl font-black text-green-950 text-center mb-2">
+          <Text className="text-4xl font-black text-green-950 dark:text-green-100 text-center mb-2">
             Excellent!
           </Text>
 
-          <Text className="text-slate-600 text-center mt-2 leading-6 mb-4">
+          <Text className="text-slate-600 dark:text-slate-400 text-center mt-2 leading-6 mb-4">
             You've completed all {queue.length} cards in this deck. Great
             progress!
           </Text>
 
-          <View className="w-full bg-white rounded-3xl p-6 shadow-md mb-8">
-            <Text className="text-sm font-semibold text-slate-600 mb-4">
+          <View className="w-full bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-md mb-8">
+            <Text className="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4">
               Session Summary
             </Text>
             <View className="flex-row justify-between gap-4">
-              <View className="flex-1 bg-green-50 rounded-2xl p-4 items-center">
-                <Text className="text-2xl font-black text-green-600">
+              <View className="flex-1 bg-green-50 dark:bg-green-950 rounded-2xl p-4 items-center">
+                <Text className="text-2xl font-black text-green-600 dark:text-green-400">
                   {completedCount}
                 </Text>
-                <Text className="text-xs text-green-600 font-medium mt-1">
+                <Text className="text-xs text-green-600 dark:text-green-500 font-medium mt-1">
                   Mastered
                 </Text>
               </View>
-              <View className="flex-1 bg-blue-50 rounded-2xl p-4 items-center">
-                <Text className="text-2xl font-black text-blue-600">
+              <View className="flex-1 bg-blue-50 dark:bg-blue-950 rounded-2xl p-4 items-center">
+                <Text className="text-2xl font-black text-blue-600 dark:text-blue-400">
                   {queue.length}
                 </Text>
-                <Text className="text-xs text-blue-600 font-medium mt-1">
+                <Text className="text-xs text-blue-600 dark:text-blue-500 font-medium mt-1">
                   Total Cards
                 </Text>
               </View>
@@ -188,19 +194,21 @@ export default function StudyScreen() {
           className="mb-4 self-start"
           accessibilityLabel="Close study session"
         >
-          <Text className="text-2xl">←</Text>
+          <Text className="text-2xl dark:text-white">←</Text>
         </TouchableOpacity>
 
         {/* Progress Info */}
         <View className="flex-row justify-between items-center mb-3">
-          <Text className="text-sm font-bold text-indigo-600">PROGRESS</Text>
-          <Text className="text-sm font-bold text-indigo-600">
+          <Text className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+            PROGRESS
+          </Text>
+          <Text className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
             {completedCount}/{queue.length}
           </Text>
         </View>
 
         {/* Progress Bar */}
-        <View className="h-3 w-full bg-indigo-100 rounded-full overflow-hidden shadow-inner">
+        <View className="h-3 w-full bg-indigo-100 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
           <View
             className="h-full bg-gradient-to-r from-indigo-500 to-indigo-600 transition-all"
             style={{ width: `${progressPercentage}%` }}
@@ -215,13 +223,13 @@ export default function StudyScreen() {
           term={currentCard.term}
           definition={currentCard.definition}
         />
-        <Text className="text-slate-500 mt-8 text-sm font-medium">
+        <Text className="text-slate-500 dark:text-slate-400 mt-8 text-sm font-medium">
           Tap the card to reveal answer
         </Text>
       </View>
 
       {/* Action Buttons */}
-      <View className="px-6 pb-8 gap-3">
+      <View className="px-6 pb-8 gap-3 mt-10">
         {/* Not Mastered Button */}
         <TouchableOpacity
           onPress={() => {
@@ -229,14 +237,14 @@ export default function StudyScreen() {
             handleAnswer(false);
           }}
           disabled={isAnswering}
-          className="flex-row items-center justify-center bg-white border-2 border-orange-200 p-5 rounded-3xl shadow-md active:scale-95 transition-all"
+          className="flex-row items-center justify-center bg-white dark:bg-slate-800 border-2 border-orange-200 dark:border-orange-900 p-5 rounded-3xl shadow-md active:scale-95 transition-all"
           activeOpacity={0.8}
           accessibilityRole="button"
           accessibilityLabel="Not mastered - will review later"
           accessibilityState={{ disabled: isAnswering }}
         >
           <Text className="text-xl mr-2">🔄</Text>
-          <Text className="text-orange-600 font-bold text-base">
+          <Text className="text-orange-600 dark:text-orange-400 font-bold text-base">
             Learn Again
           </Text>
         </TouchableOpacity>

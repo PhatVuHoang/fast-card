@@ -1,6 +1,7 @@
 import { db } from "@db/client";
-import { decks } from "@db/schema";
+import { cards, decks } from "@db/schema";
 import { Ionicons } from "@expo/vector-icons";
+import { eq, sql } from "drizzle-orm";
 import * as Haptics from "expo-haptics";
 import { Link, useRouter } from "expo-router";
 import { useColorScheme } from "nativewind";
@@ -25,7 +26,23 @@ export default function Home() {
     const fetchDecks = async () => {
       try {
         setIsLoading(true);
-        const result = await db.select().from(decks);
+        const result = await db
+          .select({
+            id: decks.id,
+            name: decks.name,
+            cardCount: sql<number>`COUNT(${cards.id})`.mapWith(Number),
+            masteredCount: sql<number>`
+              ROUND(
+                COALESCE(
+                  SUM(CASE WHEN ${cards.level} >= 5 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(${cards.id}), 0),
+                  0
+                )
+              )
+            `.mapWith(Number),
+          })
+          .from(decks)
+          .leftJoin(cards, eq(decks.id, cards.deckId))
+          .groupBy(decks.id);
         setAllDecks(result);
       } catch (error) {
         console.error("Failed to load decks:", error);
@@ -124,7 +141,6 @@ export default function Home() {
             <Text className="text-slate-600 dark:text-slate-400 text-center mb-6 leading-5">
               Create your first deck to start learning with spaced repetition.
             </Text>
-            https://gemini.google.com/app
             <Link href="/import" asChild>
               <TouchableOpacity
                 onPress={handleNewDeck}

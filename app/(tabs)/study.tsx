@@ -1,7 +1,7 @@
 import { Flashcard } from "@components/Card";
 import { db } from "@db/client";
 import { cards } from "@db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, lte } from "drizzle-orm";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useColorScheme } from "nativewind";
@@ -31,10 +31,13 @@ export default function StudyScreen() {
   useEffect(() => {
     const loadCards = async () => {
       try {
+        const now = new Date();
+
         const result = await db
           .select()
           .from(cards)
-          .where(eq(cards.deckId, Number(id)));
+          .where(and(eq(cards.deckId, Number(id)), lte(cards.nextReview, now)));
+
         setQueue(result.sort(() => Math.random() - 0.5));
       } catch (error) {
         console.error("Failed to load cards:", error);
@@ -106,6 +109,35 @@ export default function StudyScreen() {
             Loading cards...
           </Text>
         </View>
+      </View>
+    );
+  }
+
+  if (!isLoading && queue.length === 0 && completedCount === 0) {
+    return (
+      <View
+        className="flex-1 bg-indigo-50 dark:bg-slate-950 items-center justify-center px-6"
+        style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+      >
+        <View className="w-24 h-24 bg-indigo-100 dark:bg-indigo-900 rounded-full items-center justify-center mb-6">
+          <Text className="text-5xl">☕</Text>
+        </View>
+        <Text className="text-3xl font-black text-indigo-950 dark:text-white text-center mb-2">
+          All Caught Up!
+        </Text>
+        <Text className="text-slate-600 dark:text-slate-400 text-center mt-2 leading-6 mb-8">
+          Bạn không có thẻ nào cần ôn tập vào lúc này. Thuật toán đang để não bộ
+          của bạn được nghỉ ngơi!
+        </Text>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          className="bg-indigo-600 px-8 py-4 rounded-2xl items-center shadow-lg"
+          activeOpacity={0.8}
+        >
+          <Text className="text-white font-bold text-lg">
+            Quay lại danh sách
+          </Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -232,6 +264,7 @@ export default function StudyScreen() {
           key={currentCard.id}
           term={currentCard.term}
           definition={currentCard.definition}
+          onSwipe={(isMastered) => handleAnswer(isMastered)}
         />
         <Text className="text-slate-500 dark:text-slate-400 mt-8 text-sm font-medium">
           Tap the card to reveal answer

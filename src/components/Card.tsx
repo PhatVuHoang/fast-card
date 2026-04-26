@@ -3,8 +3,10 @@ import * as Haptics from "expo-haptics";
 import * as Speech from "expo-speech";
 import { useColorScheme } from "nativewind";
 import { Dimensions, Pressable, Text, View } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   interpolate,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -14,18 +16,62 @@ const { width } = Dimensions.get("window");
 const isSmallScreen = width < 400;
 const cardWidth = isSmallScreen ? width - 48 : Math.min(width - 32, 360);
 const cardHeight = isSmallScreen ? 280 : 320;
+const SWIPE_THRESHOLD = width * 0.25;
 
 export const Flashcard = ({
   term,
   definition,
+  onSwipe,
 }: {
   term: string;
   definition: string;
+  onSwipe?: (isMastered: boolean) => void;
 }) => {
   const spin = useSharedValue(0);
   const scale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
+
+  const panGesture = Gesture.Pan()
+    .onUpdate((event) => {
+      translateX.value = event.translationX;
+      translateY.value = event.translationY;
+    })
+    .onEnd((event) => {
+      if (event.translationX > SWIPE_THRESHOLD) {
+        translateX.value = withSpring(width * 1.5, {
+          velocity: event.velocityX,
+        });
+        if (onSwipe) runOnJS(onSwipe)(true);
+      } else if (event.translationX < -SWIPE_THRESHOLD) {
+        translateX.value = withSpring(-width * 1.5, {
+          velocity: event.velocityX,
+        });
+        if (onSwipe) runOnJS(onSwipe)(false);
+      } else {
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+      }
+    });
+
+  const animatedCardStyle = useAnimatedStyle(() => {
+    const rotateZ = interpolate(
+      translateX.value,
+      [-width / 2, width / 2],
+      [-15, 15],
+    );
+
+    return {
+      transform: [
+        { translateX: translateX.value },
+        { translateY: translateY.value },
+        { rotateZ: `${rotateZ}deg` },
+      ],
+    };
+  });
 
   const frontStyle = useAnimatedStyle(() => ({
     transform: [
@@ -45,13 +91,29 @@ export const Flashcard = ({
     opacity: interpolate(spin.value, [0, 0.4, 0.6, 1], [0, 0.1, 0.9, 1]),
   }));
 
+  const overlayStyle = useAnimatedStyle(() => {
+    const opacityRight = interpolate(
+      translateX.value,
+      [0, SWIPE_THRESHOLD],
+      [0, 0.5],
+      "clamp",
+    );
+    const opacityLeft = interpolate(
+      translateX.value,
+      [0, -SWIPE_THRESHOLD],
+      [0, 0.5],
+      "clamp",
+    );
+
+    return {
+      backgroundColor: translateX.value > 0 ? "#4ade80" : "#f87171",
+      opacity: translateX.value > 0 ? opacityRight : opacityLeft,
+    };
+  });
+
   const playSound = (text: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Speech.speak(text, {
-      language: "en-US",
-      pitch: 1.0,
-      rate: 0.9,
-    });
+    Speech.speak(text, { language: "en-US", pitch: 1.0, rate: 0.9 });
   };
 
   const handleFlip = () => {
@@ -59,13 +121,9 @@ export const Flashcard = ({
     scale.value = withSpring(0.95, { damping: 10, mass: 1 }, () => {
       scale.value = withSpring(1, { damping: 10, mass: 1 });
     });
-    spin.value = withSpring(spin.value === 0 ? 1 : 0, {
-      damping: 12,
-      mass: 1,
-    });
+    spin.value = withSpring(spin.value === 0 ? 1 : 0, { damping: 12, mass: 1 });
   };
 
-  // Shared card content layout
   const CardContent = ({
     text,
     isFront,
@@ -76,25 +134,7 @@ export const Flashcard = ({
     <Pressable
       onPress={handleFlip}
       className="flex-1 w-full px-8 py-10 justify-center items-center"
-      accessibilityRole="button"
-      accessibilityLabel={isFront ? `Term: ${text}` : `Definition: ${text}`}
     >
-      <View
-        className={`absolute top-6 left-6 px-3 py-1 rounded-full ${
-          isFront
-            ? "bg-indigo-200 bg-opacity-40"
-            : "bg-indigo-500 bg-opacity-40"
-        }`}
-      >
-        <Text
-          className={`text-xs font-bold tracking-wide ${
-            isFront ? "text-indigo-700 dark:text-indigo-300" : "text-indigo-100"
-          }`}
-        >
-          {isFront ? "TERM" : "DEFINITION"}
-        </Text>
-      </View>
-
       <View className="flex-1 w-full justify-center items-center px-4 gap-4">
         <Text
           className={`text-center leading-tight ${
@@ -107,53 +147,11 @@ export const Flashcard = ({
           {text}
         </Text>
       </View>
-
-      <View className="flex-row items-center gap-2">
-        <View
-          className={`w-6 h-0.5 rounded-full ${
-            isFront
-              ? "bg-gradient-to-r from-transparent to-indigo-300"
-              : "bg-gradient-to-r from-transparent to-indigo-200"
-          }`}
-        />
-        <Text
-          className={`text-xs font-semibold tracking-wider ${
-            isFront ? "text-indigo-500 dark:text-indigo-400" : "text-indigo-200"
-          }`}
-        >
-          {isFront ? "TAP TO REVEAL" : "TAP TO GO BACK"}
-        </Text>
-        <View
-          className={`w-6 h-0.5 rounded-full ${
-            isFront
-              ? "bg-gradient-to-l from-transparent to-indigo-300"
-              : "bg-gradient-to-l from-transparent to-indigo-200"
-          }`}
-        />
-      </View>
-
-      <View
-        className={`absolute bottom-6 w-12 h-1 rounded-full ${
-          isFront
-            ? "bg-gradient-to-r from-green-400 to-green-300"
-            : "bg-gradient-to-r from-blue-300 to-indigo-300"
-        }`}
-      />
-
-      <View
-        className={`absolute ${
-          isFront ? "bottom-4 left-4" : "top-4 right-4"
-        } w-2 h-2 bg-indigo-300 rounded-full ${
-          isFront ? "opacity-50" : "opacity-40"
-        }`}
-      />
-      <View
-        className={`absolute ${
-          isFront ? "bottom-6 left-7" : "top-6 right-7"
-        } w-1.5 h-1.5 bg-indigo-200 rounded-full ${
-          isFront ? "opacity-40" : "opacity-30"
-        }`}
-      />
+      <Text
+        className={`text-xs font-semibold tracking-wider ${isFront ? "text-indigo-500 dark:text-indigo-400" : "text-indigo-200"}`}
+      >
+        {isFront ? "TAP TO REVEAL" : "TAP TO GO BACK"}
+      </Text>
     </Pressable>
   );
 
@@ -166,67 +164,60 @@ export const Flashcard = ({
   };
 
   return (
-    <View style={{ width: cardWidth, height: cardHeight }} accessible={false}>
-      {/* Front Side - Term */}
+    <GestureDetector gesture={panGesture}>
       <Animated.View
-        style={[frontStyle, cardStyle]}
-        accessibilityLabel="Flashcard - front side"
-        accessibilityRole="button"
-        accessibilityHint="Tap to flip and see the definition"
+        style={[animatedCardStyle, { width: cardWidth, height: cardHeight }]}
       >
-        {/* Claymorphism: Outer shadows */}
-        <View className="absolute inset-0 bg-white dark:bg-slate-900 rounded-4xl" />
-
-        {/* Inner shadow effect */}
-        <View className="absolute inset-0 rounded-4xl shadow-2xl" />
-
-        <CardContent text={term} isFront={true} />
-
-        {/* Sound Button - fixed position */}
-        <Pressable
-          onPress={() => playSound(term)}
-          className="absolute top-6 right-6 bg-white dark:bg-slate-700 rounded-full shadow-lg active:shadow-xl active:scale-90 transition-all p-3"
-          accessibilityRole="button"
-          accessibilityLabel={`Pronunciation: ${term}`}
-          accessibilityHint="Tap to hear pronunciation"
-        >
-          <MaterialCommunityIcons
-            name="volume-high"
-            size={24}
-            color={isDark ? "#818CF8" : "#4F46E5"}
+        <Animated.View style={[frontStyle, cardStyle]}>
+          <View className="absolute inset-0 bg-white dark:bg-slate-900 rounded-4xl" />
+          <View className="absolute inset-0 rounded-4xl shadow-2xl" />
+          <Animated.View
+            style={[
+              overlayStyle,
+              { position: "absolute", inset: 0, zIndex: 1 },
+            ]}
           />
-        </Pressable>
+          <CardContent text={term} isFront={true} />
+
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              playSound(term);
+            }}
+            className="absolute top-6 right-6 bg-white dark:bg-slate-700 rounded-full shadow-lg p-3 z-50"
+          >
+            <MaterialCommunityIcons
+              name="volume-high"
+              size={24}
+              color={isDark ? "#818CF8" : "#4F46E5"}
+            />
+          </Pressable>
+        </Animated.View>
+
+        <Animated.View style={[backStyle, cardStyle]}>
+          <View className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-indigo-700 to-indigo-900 rounded-4xl" />
+          <Animated.View
+            style={[
+              overlayStyle,
+              { position: "absolute", inset: 0, zIndex: 1 },
+            ]}
+          />
+          <CardContent text={definition} isFront={false} />
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              playSound(definition);
+            }}
+            className="absolute top-6 right-6 bg-indigo-400 bg-opacity-60 rounded-full shadow-lg p-3 z-50"
+          >
+            <MaterialCommunityIcons
+              name="volume-high"
+              size={24}
+              color="white"
+            />
+          </Pressable>
+        </Animated.View>
       </Animated.View>
-
-      {/* Back Side - Definition */}
-      <Animated.View
-        style={[backStyle, cardStyle]}
-        accessibilityLabel="Flashcard - back side"
-        accessibilityRole="button"
-        accessibilityHint="Tap to flip and see the term"
-      >
-        {/* Claymorphism: Rich gradient background */}
-        <View className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-indigo-700 to-indigo-900 rounded-4xl" />
-
-        {/* Subtle pattern overlay */}
-        <View className="absolute inset-0 opacity-5">
-          <View className="absolute top-10 right-10 w-32 h-32 bg-white rounded-full blur-3xl" />
-          <View className="absolute bottom-10 left-10 w-40 h-40 bg-indigo-300 rounded-full blur-3xl" />
-        </View>
-
-        <CardContent text={definition} isFront={false} />
-
-        {/* Sound Button for Definition - fixed position */}
-        <Pressable
-          onPress={() => playSound(definition)}
-          className="absolute top-6 right-6 bg-indigo-400 bg-opacity-60 rounded-full shadow-lg active:shadow-xl active:scale-90 transition-all p-3"
-          accessibilityRole="button"
-          accessibilityLabel={`Pronunciation: definition`}
-          accessibilityHint="Tap to hear pronunciation"
-        >
-          <MaterialCommunityIcons name="volume-high" size={24} color="white" />
-        </Pressable>
-      </Animated.View>
-    </View>
+    </GestureDetector>
   );
 };

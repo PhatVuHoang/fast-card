@@ -14,6 +14,7 @@ import "react-native-reanimated";
 import { useColorScheme } from "@/components/useColorScheme";
 import "@/global.css";
 import { db, expoDb } from "@db/client";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 // --- DRIZZLE ORM DATABASE IMPORTS ---
 import migrations from "@/drizzle/migrations";
@@ -81,12 +82,14 @@ function RootLayoutNav() {
   }
 
   return (
-    <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: "modal" }} />
-        <Stack.Screen name="import" options={{ presentation: "modal" }} />
-      </Stack>
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="modal" options={{ presentation: "modal" }} />
+          <Stack.Screen name="import" options={{ presentation: "modal" }} />
+        </Stack>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }

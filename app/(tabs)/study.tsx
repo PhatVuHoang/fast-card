@@ -121,13 +121,11 @@ export default function StudyScreen() {
         style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
       >
         <ScrollView
-          // Đưa alignItems và justifyContent vào đúng chỗ của nó
           contentContainerStyle={{
             flexGrow: 1,
             alignItems: "center",
             justifyContent: "center",
           }}
-          // Chỉ giữ lại flex-1 và padding cho lớp bên ngoài
           className="flex-1 px-6"
         >
           <View

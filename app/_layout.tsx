@@ -8,31 +8,33 @@ import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
+import { Text, View } from "react-native";
 import "react-native-reanimated";
-import "../global.css";
 
-import { useColorScheme } from "nativewind";
+import { useColorScheme } from "@/components/useColorScheme";
+import "@/global.css";
+import { db, expoDb } from "@db/client";
 
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from "expo-router";
+// --- DRIZZLE ORM DATABASE IMPORTS ---
+import migrations from "@/drizzle/migrations";
+import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
+import { useDrizzleStudio } from "expo-drizzle-studio-plugin";
+
+export { ErrorBoundary } from "expo-router";
 
 export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
   initialRouteName: "(tabs)",
 };
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
-    SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
+    // Sửa thành đường dẫn Alias gốc để tránh lỗi Cannot resolve module
+    SpaceMono: require("@/assets/fonts/SpaceMono-Regular.ttf"),
     ...FontAwesome.font,
   });
 
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
     if (error) throw error;
   }, [error]);
@@ -51,13 +53,39 @@ export default function RootLayout() {
 }
 
 function RootLayoutNav() {
-  const { colorScheme } = useColorScheme();
+  const colorScheme = useColorScheme();
+
+  const { success, error } = useMigrations(db, migrations);
+
+  useDrizzleStudio(expoDb);
+
+  if (error) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <Text className="text-red-500 font-bold mb-2">
+          Lỗi khởi tạo Database:
+        </Text>
+        <Text className="text-center px-4">{error.message}</Text>
+      </View>
+    );
+  }
+
+  if (!success) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <Text className="font-semibold text-lg">
+          Đang thiết lập Database...
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: "modal" }} />
+        <Stack.Screen name="import" options={{ presentation: "modal" }} />
       </Stack>
     </ThemeProvider>
   );

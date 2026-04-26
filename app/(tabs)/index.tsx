@@ -1,51 +1,49 @@
-import { db, setupDb } from "@db/client";
+import { db } from "@db/client";
 import { decks } from "@db/schema";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import { useColorScheme } from "nativewind";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  SafeAreaView,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function Home() {
   const [allDecks, setAllDecks] = useState<any[]>([]);
-  const [isReady, setIsReady] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const { colorScheme, setColorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
+  const router = useRouter();
 
   useEffect(() => {
-    const init = async () => {
+    const fetchDecks = async () => {
       try {
-        await setupDb();
+        setIsLoading(true);
         const result = await db.select().from(decks);
         setAllDecks(result);
       } catch (error) {
         console.error("Failed to load decks:", error);
       } finally {
-        setIsReady(true);
         setIsLoading(false);
       }
     };
-    init();
+    fetchDecks();
   }, []);
 
-  const handleDeckPress = () => {
+  const handleDeckPress = (id: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push(`/study?id=${id}`);
   };
 
   const handleNewDeck = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
-
-  if (!isReady) return null;
 
   return (
     <SafeAreaView className="flex-1 bg-indigo-50 dark:bg-slate-950">
@@ -85,7 +83,14 @@ export default function Home() {
               <Link href="/import" asChild>
                 <TouchableOpacity
                   onPress={handleNewDeck}
-                  className="bg-indigo-600 dark:bg-indigo-500 px-5 py-4 rounded-2xl shadow-lg shadow-indigo-200 active:shadow-md active:scale-95 transition-all"
+                  className="bg-indigo-600 dark:bg-indigo-500 px-5 py-4 rounded-2xl active:scale-95"
+                  style={{
+                    elevation: 3,
+                    shadowColor: "#4F46E5",
+                    shadowOpacity: 0.3,
+                    shadowRadius: 3,
+                    shadowOffset: { width: 0, height: 2 },
+                  }}
                   activeOpacity={0.8}
                 >
                   <Text className="text-white font-bold text-base">+ New</Text>
@@ -119,11 +124,19 @@ export default function Home() {
             <Text className="text-slate-600 dark:text-slate-400 text-center mb-6 leading-5">
               Create your first deck to start learning with spaced repetition.
             </Text>
+            https://gemini.google.com/app
             <Link href="/import" asChild>
               <TouchableOpacity
                 onPress={handleNewDeck}
-                className="bg-gradient-to-r from-green-400 to-green-500 px-8 py-3 rounded-2xl shadow-lg shadow-green-200"
+                className="bg-gradient-to-r from-green-400 to-green-500 px-8 py-3 rounded-2xl"
                 activeOpacity={0.8}
+                style={{
+                  elevation: 3,
+                  shadowColor: "#4ade80",
+                  shadowOpacity: 0.3,
+                  shadowRadius: 3,
+                  shadowOffset: { width: 0, height: 2 },
+                }}
               >
                 <Text className="text-white font-bold text-base">
                   Create First Deck
@@ -139,11 +152,18 @@ export default function Home() {
             renderItem={({ item }) => (
               <Link href={`/study?id=${item.id}`} asChild>
                 <TouchableOpacity
-                  onPress={handleDeckPress}
-                  className="mx-5 mb-4 bg-white dark:bg-slate-900 rounded-3xl overflow-hidden shadow-md active:shadow-xl active:scale-98 transition-all"
+                  onPress={() => handleDeckPress(item.id)}
+                  className="mx-5 mb-4 bg-white dark:bg-slate-900 rounded-3xl overflow-hidden active:scale-98"
                   activeOpacity={0.8}
                   accessibilityRole="button"
                   accessibilityLabel={`${item.name} deck with ${item.cardCount || 0} cards and ${item.masteredCount || 0}% mastery`}
+                  style={{
+                    elevation: 5,
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.1,
+                    shadowRadius: 4,
+                  }}
                 >
                   <View className="p-6">
                     {/* Card Header */}

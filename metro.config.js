@@ -11,6 +11,7 @@ config.resolver.alias = {
 };
 
 config.resolver.assetExts.push("wasm");
+config.resolver.sourceExts.push("sql");
 
 config.server.enhanceMiddleware = (middleware) => {
   return (req, res, next) => {

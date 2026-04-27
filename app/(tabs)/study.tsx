@@ -1,7 +1,7 @@
+// app/(tabs)/study.tsx
 import { Flashcard, MultipleChoiceCard, WrittenCard } from "@components/cards";
 import { db } from "@db/client";
-import type { Card } from "@db/schema";
-import { cards } from "@db/schema";
+import { cards, type Card } from "@db/schema";
 import { Ionicons } from "@expo/vector-icons";
 import { eq } from "drizzle-orm";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -41,10 +41,13 @@ export default function StudyScreen() {
         setAllDeckCards(result);
 
         const now = new Date();
+        // Nếu mode = all thì bốc toàn bộ thẻ, nếu không thì chỉ bốc thẻ đến hạn
         let initialCards =
           mode === "all"
             ? result
-            : result.filter((c) => new Date(c.nextReview!) <= now);
+            : result.filter(
+                (c) => c.nextReview && new Date(c.nextReview) <= now,
+              );
 
         initialCards = initialCards.sort(() => Math.random() - 0.5);
 
@@ -77,7 +80,7 @@ export default function StudyScreen() {
         .where(eq(cards.id, currentCard.id))
         .catch(console.error);
 
-      if (currentCard.level !== -1) {
+      if ((currentCard as any)._isRetry !== true) {
         if (isCorrect) setSessionStats((s) => ({ ...s, known: s.known + 1 }));
         else setSessionStats((s) => ({ ...s, learning: s.learning + 1 }));
       }
@@ -102,6 +105,7 @@ export default function StudyScreen() {
       </SafeAreaView>
     );
 
+  // VIEW 1: TRỐNG TRƠN (Không có thẻ nào đến hạn)
   if (totalInitialCards === 0) {
     return (
       <SafeAreaView className="flex-1 bg-indigo-50 dark:bg-slate-950 items-center justify-center p-8">
@@ -113,18 +117,36 @@ export default function StudyScreen() {
           You've reviewed all due cards. Take a break — your brain is hard at
           work!
         </Text>
-        <TouchableOpacity
-          onPress={() => router.replace("/")}
-          className="bg-indigo-600 w-full py-5 rounded-3xl shadow-lg"
-        >
-          <Text className="text-white text-center font-black text-lg">
-            GO HOME
-          </Text>
-        </TouchableOpacity>
+
+        <View className="w-full gap-4">
+          <TouchableOpacity
+            onPress={() =>
+              router.replace({
+                pathname: "/study",
+                params: { id, mode: "all" },
+              })
+            }
+            className="bg-indigo-600 w-full py-5 rounded-3xl shadow-lg"
+          >
+            <Text className="text-white text-center font-black text-lg">
+              STUDY ANYWAY (CRAM)
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => router.replace("/")}
+            className="bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 w-full py-5 rounded-3xl"
+          >
+            <Text className="text-slate-700 dark:text-white text-center font-black text-lg">
+              GO HOME
+            </Text>
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     );
   }
 
+  // VIEW 2: HOÀN THÀNH PHIÊN HỌC HIỆN TẠI
   if (queue.length === 0) {
     return (
       <SafeAreaView className="flex-1 bg-white dark:bg-slate-950 items-center justify-center p-8">
@@ -150,9 +172,10 @@ export default function StudyScreen() {
             </Text>
           </View>
         </View>
+
         <TouchableOpacity
           onPress={() => router.replace("/")}
-          className="bg-indigo-600 w-full py-5 rounded-3xl"
+          className="bg-indigo-600 w-full py-5 rounded-3xl shadow-lg flex items-center justify-center"
         >
           <Text className="text-white text-center font-black text-lg">
             DONE
@@ -228,17 +251,17 @@ export default function StudyScreen() {
         <View className="px-6 pb-12 gap-4">
           <TouchableOpacity
             onPress={() => handleAnswer(false)}
-            className="bg-white dark:bg-slate-800 border-2 border-orange-100 p-5 rounded-3xl items-center shadow-sm"
+            className="bg-white dark:bg-slate-800 border-2 border-orange-100 dark:border-slate-700 p-5 rounded-3xl items-center shadow-sm"
           >
-            <Text className="text-orange-600 font-black text-lg">
-              Still learning
+            <Text className="text-orange-600 dark:text-orange-400 font-black text-lg">
+              STILL LEARNING
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => handleAnswer(true)}
             className="bg-indigo-600 p-5 rounded-3xl items-center shadow-lg"
           >
-            <Text className="text-white font-black text-lg">Know it</Text>
+            <Text className="text-white font-black text-lg">KNOW IT</Text>
           </TouchableOpacity>
         </View>
       )}

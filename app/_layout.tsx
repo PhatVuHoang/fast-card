@@ -16,10 +16,14 @@ import { db, expoDb } from "@db/client";
 import { useColorScheme } from "nativewind";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
-// --- DRIZZLE ORM DATABASE IMPORTS ---
 import migrations from "@/drizzle/migrations";
 import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
 import { useDrizzleStudio } from "expo-drizzle-studio-plugin";
+
+import {
+  scheduleStudyReminder,
+  setupNotifications,
+} from "@utils/notifications";
 
 export { ErrorBoundary } from "expo-router";
 
@@ -31,7 +35,6 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
-    // Sửa thành đường dẫn Alias gốc để tránh lỗi Cannot resolve module
     SpaceMono: require("@/assets/fonts/SpaceMono-Regular.ttf"),
     ...FontAwesome.font,
   });
@@ -63,6 +66,23 @@ function RootLayoutNav() {
   const { success, error } = useMigrations(db, migrations);
 
   useDrizzleStudio(expoDb);
+
+  useEffect(() => {
+    if (success) {
+      setupNotifications().then((result) => {
+        if (!result.ok) {
+          if (result.reason === "expo-go") {
+            console.info(
+              "Notifications are disabled in Expo Go. Use a development build to test Android notifications.",
+            );
+          }
+          return;
+        }
+
+        scheduleStudyReminder();
+      });
+    }
+  }, [success]);
 
   if (error) {
     return (

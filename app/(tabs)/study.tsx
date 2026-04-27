@@ -1,13 +1,19 @@
-import { Flashcard } from "@components/Card";
+import { Flashcard, MultipleChoiceCard, WrittenCard } from "@components/cards";
 import { db } from "@db/client";
 import type { Card } from "@db/schema";
 import { cards } from "@db/schema";
 import { Ionicons } from "@expo/vector-icons";
 import { eq } from "drizzle-orm";
-import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -18,8 +24,9 @@ export default function StudyScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const [allCards, setAllCards] = useState<Card[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [allDeckCards, setAllDeckCards] = useState<Card[]>([]);
+  const [queue, setQueue] = useState<Card[]>([]);
+  const [totalInitialCards, setTotalInitialCards] = useState(0);
   const [sessionStats, setSessionStats] = useState({ known: 0, learning: 0 });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -30,7 +37,19 @@ export default function StudyScreen() {
           .select()
           .from(cards)
           .where(eq(cards.deckId, Number(id)));
-        setAllCards(result.sort(() => Math.random() - 0.5));
+
+        setAllDeckCards(result);
+
+        const now = new Date();
+        let initialCards =
+          mode === "all"
+            ? result
+            : result.filter((c) => new Date(c.nextReview!) <= now);
+
+        initialCards = initialCards.sort(() => Math.random() - 0.5);
+
+        setQueue(initialCards);
+        setTotalInitialCards(initialCards.length);
       } catch (err) {
         console.error(err);
       } finally {
@@ -38,40 +57,42 @@ export default function StudyScreen() {
       }
     };
     loadData();
-  }, [id]);
-
-  const filteredCards = useMemo(() => {
-    if (mode === "all") return allCards;
-    const now = new Date();
-    return allCards.filter((c) => new Date(c.nextReview!) <= now);
-  }, [allCards, mode]);
+  }, [id, mode]);
 
   const handleAnswer = useCallback(
-    async (known: boolean) => {
-      const currentCard = filteredCards[currentIndex];
-      if (!currentCard) return;
+    async (isCorrect: boolean) => {
+      if (queue.length === 0) return;
 
-      if (known) {
-        setSessionStats((s) => ({ ...s, known: s.known + 1 }));
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } else {
-        setSessionStats((s) => ({ ...s, learning: s.learning + 1 }));
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      }
+      const currentCard = queue[0];
+      const currentLevel = currentCard.level ?? 0;
 
-      const newLevel = known ? Math.min((currentCard.level ?? 0) + 1, 5) : 0;
+      const newLevel = isCorrect ? Math.min(currentLevel + 1, 5) : 0;
       const daysToAdd = Math.pow(2, newLevel);
       const nextReview = new Date(
-        Date.now() + (known ? daysToAdd * 24 * 60 * 60 * 1000 : 0),
+        Date.now() + (isCorrect ? daysToAdd * 24 * 60 * 60 * 1000 : 0),
       );
 
-      await db
-        .update(cards)
+      db.update(cards)
         .set({ level: newLevel, nextReview })
-        .where(eq(cards.id, currentCard.id));
-      setCurrentIndex((prev) => prev + 1);
+        .where(eq(cards.id, currentCard.id))
+        .catch(console.error);
+
+      if (currentCard.level !== -1) {
+        if (isCorrect) setSessionStats((s) => ({ ...s, known: s.known + 1 }));
+        else setSessionStats((s) => ({ ...s, learning: s.learning + 1 }));
+      }
+
+      setQueue((prevQueue) => {
+        const newQueue = [...prevQueue];
+        newQueue.shift();
+
+        if (!isCorrect) {
+          newQueue.push({ ...currentCard, level: 0, _isRetry: true } as any);
+        }
+        return newQueue;
+      });
     },
-    [filteredCards, currentIndex],
+    [queue],
   );
 
   if (isLoading)
@@ -81,7 +102,7 @@ export default function StudyScreen() {
       </SafeAreaView>
     );
 
-  if (filteredCards.length === 0) {
+  if (totalInitialCards === 0) {
     return (
       <SafeAreaView className="flex-1 bg-indigo-50 dark:bg-slate-950 items-center justify-center p-8">
         <Text className="text-6xl mb-6">☕</Text>
@@ -104,7 +125,7 @@ export default function StudyScreen() {
     );
   }
 
-  if (currentIndex >= filteredCards.length) {
+  if (queue.length === 0) {
     return (
       <SafeAreaView className="flex-1 bg-white dark:bg-slate-950 items-center justify-center p-8">
         <Text className="text-6xl mb-6">🎉</Text>
@@ -141,8 +162,17 @@ export default function StudyScreen() {
     );
   }
 
+  const currentCard = queue[0];
+  const cardLevel = currentCard.level ?? 0;
+
+  const completedCards = Math.max(
+    0,
+    totalInitialCards - queue.filter((c: any) => !c._isRetry).length,
+  );
+
   return (
-    <View
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={{ paddingTop: insets.top }}
       className="flex-1 bg-indigo-50 dark:bg-slate-950"
     >
@@ -153,37 +183,65 @@ export default function StudyScreen() {
         <View className="flex-1 mx-6 h-2 bg-white dark:bg-slate-800 rounded-full overflow-hidden">
           <View
             className="h-full bg-indigo-500"
-            style={{ width: `${(currentIndex / filteredCards.length) * 100}%` }}
+            style={{ width: `${(completedCards / totalInitialCards) * 100}%` }}
           />
         </View>
-        <Text className="text-slate-500 font-bold">
-          {currentIndex + 1}/{filteredCards.length}
-        </Text>
-      </View>
-      <View className="flex-1 items-center justify-center px-6">
-        <Flashcard
-          key={filteredCards[currentIndex].id}
-          term={filteredCards[currentIndex].term}
-          definition={filteredCards[currentIndex].definition}
-          onSwipe={handleAnswer}
-        />
-      </View>
-      <View className="px-6 pb-12 gap-4">
-        <TouchableOpacity
-          onPress={() => handleAnswer(false)}
-          className="bg-white dark:bg-slate-800 border-2 border-orange-100 p-5 rounded-3xl items-center shadow-sm"
-        >
-          <Text className="text-orange-600 font-black text-lg">
-            Still learning
+        <View className="items-end">
+          <Text className="text-slate-500 font-bold text-xs uppercase">
+            Lv. {cardLevel}
           </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => handleAnswer(true)}
-          className="bg-indigo-600 p-5 rounded-3xl items-center shadow-lg"
-        >
-          <Text className="text-white font-black text-lg">Know it</Text>
-        </TouchableOpacity>
+          <Text className="text-slate-500 font-bold">
+            {completedCards}/{totalInitialCards}
+          </Text>
+        </View>
       </View>
-    </View>
+
+      <View className="flex-1 items-center justify-center px-6">
+        {cardLevel === 0 && (
+          <Flashcard
+            key={currentCard.id + "-lvl0"}
+            term={currentCard.term}
+            definition={currentCard.definition}
+            onSwipe={handleAnswer}
+          />
+        )}
+
+        {(cardLevel === 1 || cardLevel === 2) && (
+          <MultipleChoiceCard
+            key={currentCard.id + "-lvl12"}
+            currentCard={currentCard}
+            allCards={allDeckCards}
+            onAnswer={handleAnswer}
+          />
+        )}
+
+        {cardLevel >= 3 && (
+          <WrittenCard
+            key={currentCard.id + "-lvl345"}
+            currentCard={currentCard}
+            onAnswer={handleAnswer}
+          />
+        )}
+      </View>
+
+      {cardLevel === 0 && (
+        <View className="px-6 pb-12 gap-4">
+          <TouchableOpacity
+            onPress={() => handleAnswer(false)}
+            className="bg-white dark:bg-slate-800 border-2 border-orange-100 p-5 rounded-3xl items-center shadow-sm"
+          >
+            <Text className="text-orange-600 font-black text-lg">
+              Still learning
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => handleAnswer(true)}
+            className="bg-indigo-600 p-5 rounded-3xl items-center shadow-lg"
+          >
+            <Text className="text-white font-black text-lg">Know it</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </KeyboardAvoidingView>
   );
 }

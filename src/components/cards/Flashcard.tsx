@@ -1,7 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import * as Speech from "expo-speech";
-import { useColorScheme } from "nativewind";
+import React from "react";
 import { Dimensions, Pressable, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -11,12 +10,9 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
+import { CARD_HEIGHT, CARD_WIDTH, SWIPE_THRESHOLD, playSound } from "./shared";
 
 const { width } = Dimensions.get("window");
-const isSmallScreen = width < 400;
-const cardWidth = isSmallScreen ? width - 48 : Math.min(width - 32, 360);
-const cardHeight = isSmallScreen ? 280 : 320;
-const SWIPE_THRESHOLD = width * 0.25;
 
 export const Flashcard = ({
   term,
@@ -32,9 +28,6 @@ export const Flashcard = ({
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
 
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === "dark";
-
   const handleFlip = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     scale.value = withSpring(0.95, { damping: 10, mass: 1 }, () => {
@@ -44,9 +37,7 @@ export const Flashcard = ({
   };
 
   const tapGesture = Gesture.Tap().onEnd((event) => {
-    if (event.x > cardWidth - 80 && event.y < 80) {
-      return;
-    }
+    if (event.x > CARD_WIDTH - 80 && event.y < 80) return;
     runOnJS(handleFlip)();
   });
 
@@ -57,14 +48,10 @@ export const Flashcard = ({
     })
     .onEnd((event) => {
       if (event.translationX > SWIPE_THRESHOLD) {
-        translateX.value = withSpring(width * 1.5, {
-          velocity: event.velocityX,
-        });
+        translateX.value = withSpring(width * 1.5);
         if (onSwipe) runOnJS(onSwipe)(true);
       } else if (event.translationX < -SWIPE_THRESHOLD) {
-        translateX.value = withSpring(-width * 1.5, {
-          velocity: event.velocityX,
-        });
+        translateX.value = withSpring(-width * 1.5);
         if (onSwipe) runOnJS(onSwipe)(false);
       } else {
         translateX.value = withSpring(0);
@@ -74,20 +61,15 @@ export const Flashcard = ({
 
   const composedGesture = Gesture.Exclusive(panGesture, tapGesture);
 
-  const animatedCardStyle = useAnimatedStyle(() => {
-    const rotateZ = interpolate(
-      translateX.value,
-      [-width / 2, width / 2],
-      [-15, 15],
-    );
-    return {
-      transform: [
-        { translateX: translateX.value },
-        { translateY: translateY.value },
-        { rotateZ: `${rotateZ}deg` },
-      ],
-    };
-  });
+  const animatedCardStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      {
+        rotateZ: `${interpolate(translateX.value, [-width / 2, width / 2], [-15, 15])}deg`,
+      },
+    ],
+  }));
 
   const frontStyle = useAnimatedStyle(() => ({
     transform: [
@@ -107,35 +89,21 @@ export const Flashcard = ({
     opacity: interpolate(spin.value, [0, 0.4, 0.6, 1], [0, 0.1, 0.9, 1]),
   }));
 
-  const playSound = (text: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Speech.speak(text, { language: "en-US", pitch: 1.0, rate: 0.9 });
-  };
-
-  const cardStyle = {
-    position: "absolute" as const,
-    width: cardWidth,
-    height: cardHeight,
-    borderRadius: 32,
-    overflow: "hidden" as const,
-  };
+  const cardBaseStyle =
+    "absolute rounded-[32px] overflow-hidden border border-slate-100 dark:border-slate-800 shadow-xl";
 
   return (
     <GestureDetector gesture={composedGesture}>
       <Animated.View
-        style={[animatedCardStyle, { width: cardWidth, height: cardHeight }]}
+        style={[animatedCardStyle, { width: CARD_WIDTH, height: CARD_HEIGHT }]}
       >
-        {/* FRONT */}
         <Animated.View
-          style={[frontStyle, cardStyle]}
-          className="bg-white dark:bg-slate-900 shadow-xl border border-slate-100 dark:border-slate-800"
+          style={[frontStyle, { width: CARD_WIDTH, height: CARD_HEIGHT }]}
+          className={`${cardBaseStyle} bg-white dark:bg-slate-900`}
         >
           <View className="flex-1 justify-center items-center px-8">
             <Text className="text-3xl font-black text-indigo-950 dark:text-white text-center">
               {term}
-            </Text>
-            <Text className="text-indigo-400 font-bold mt-4 text-[10px] tracking-widest uppercase">
-              Tap to reveal
             </Text>
           </View>
           <Pressable
@@ -150,17 +118,13 @@ export const Flashcard = ({
           </Pressable>
         </Animated.View>
 
-        {/* BACK */}
         <Animated.View
-          style={[backStyle, cardStyle]}
-          className="bg-indigo-600 shadow-xl"
+          style={[backStyle, { width: CARD_WIDTH, height: CARD_HEIGHT }]}
+          className={`${cardBaseStyle} bg-indigo-600`}
         >
           <View className="flex-1 justify-center items-center px-8">
             <Text className="text-xl font-bold text-white text-center">
               {definition}
-            </Text>
-            <Text className="text-indigo-200 font-bold mt-4 text-[10px] tracking-widest uppercase">
-              Tap to go back
             </Text>
           </View>
           <Pressable

@@ -1,18 +1,14 @@
 import { db } from "@db/client";
-import type { Card } from "@db/schema";
 import { cards, decks } from "@db/schema";
 import { Ionicons } from "@expo/vector-icons";
 import { eq } from "drizzle-orm";
-import * as Haptics from "expo-haptics";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useReducer, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Text,
   TextInput,
   TouchableOpacity,
@@ -20,469 +16,412 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// ── Modal state via useReducer ───────────────────────────────────────────────
-type AddMode = "menu" | "single" | "bulk";
-
-type ModalState =
-  | { open: false }
-  | { open: true; mode: AddMode; term: string; def: string; bulk: string };
-
-type ModalAction =
-  | { type: "OPEN_MENU" }
-  | { type: "SET_MODE"; mode: AddMode }
-  | { type: "SET_TERM"; value: string }
-  | { type: "SET_DEF"; value: string }
-  | { type: "SET_BULK"; value: string }
-  | { type: "CLOSE" };
-
-const MODAL_CLOSED: ModalState = { open: false };
-
-function modalReducer(state: ModalState, action: ModalAction): ModalState {
-  switch (action.type) {
-    case "OPEN_MENU":
-      return { open: true, mode: "menu", term: "", def: "", bulk: "" };
-    case "SET_MODE":
-      if (!state.open) return state;
-      return { ...state, mode: action.mode };
-    case "SET_TERM":
-      if (!state.open) return state;
-      return { ...state, term: action.value };
-    case "SET_DEF":
-      if (!state.open) return state;
-      return { ...state, def: action.value };
-    case "SET_BULK":
-      if (!state.open) return state;
-      return { ...state, bulk: action.value };
-    case "CLOSE":
-      return MODAL_CLOSED;
-    default:
-      return state;
-  }
-}
-// ────────────────────────────────────────────────────────────────────────────
-
 export default function DeckDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-  const [deckCards, setDeckCards] = useState<Card[]>([]);
-  const [deckName, setDeckName] = useState("");
+  const deckId = Number(id);
+
+  const [deck, setDeck] = useState<any>(null);
+  const [deckCards, setDeckCards] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isAdding, setIsAdding] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [importModalVisible, setImportModalVisible] = useState(false);
 
-  const [modal, dispatch] = useReducer(modalReducer, MODAL_CLOSED);
+  const [term, setTerm] = useState("");
+  const [definition, setDefinition] = useState("");
+  const [importText, setImportText] = useState("");
 
-  const loadData = useCallback(async () => {
+  const loadData = async () => {
     try {
-      const deckInfo = await db
-        .select()
-        .from(decks)
-        .where(eq(decks.id, Number(id)));
-      if (deckInfo[0]) setDeckName(deckInfo[0].name);
-      const result = await db
+      const deckResult = await db.query.decks.findFirst({
+        where: eq(decks.id, deckId),
+      });
+      const cardsResult = await db
         .select()
         .from(cards)
-        .where(eq(cards.deckId, Number(id)));
-      setDeckCards(result);
+        .where(eq(cards.deckId, deckId));
+
+      if (deckResult) setDeck(deckResult);
+      setDeckCards(cardsResult);
+    } catch (err) {
+      console.error(err);
     } finally {
       setIsLoading(false);
     }
-  }, [id]);
+  };
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [id]);
 
-  const handleAddCard = useCallback(async () => {
-    if (!modal.open || modal.mode !== "single") return;
-    if (!modal.term.trim() || !modal.def.trim()) return;
-    setIsAdding(true);
+  const handleCreateCard = async () => {
+    if (!term.trim() || !definition.trim()) return;
     try {
       await db.insert(cards).values({
-        deckId: Number(id),
-        term: modal.term.trim(),
-        definition: modal.def.trim(),
+        deckId: deckId,
+        term: term.trim(),
+        definition: definition.trim(),
+        level: 0,
         nextReview: new Date(),
       });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      dispatch({ type: "CLOSE" });
+      setTerm("");
+      setDefinition("");
+      setAddModalVisible(false);
       loadData();
-    } finally {
-      setIsAdding(false);
+    } catch (error) {
+      Alert.alert("Error", "Failed to create card");
     }
-  }, [id, loadData, modal]);
+  };
 
-  const handleBulkImport = useCallback(async () => {
-    if (!modal.open || modal.mode !== "bulk") return;
-    if (!modal.bulk.trim()) return;
-    setIsAdding(true);
-    try {
-      const cardData = modal.bulk
-        .split("\n")
-        .map((line) => {
-          const sep = line.indexOf(" - ");
-          if (sep === -1) return null;
-          return {
-            deckId: Number(id),
-            term: line.slice(0, sep).trim(),
-            definition: line.slice(sep + 3).trim(),
+  const handleFastImport = async () => {
+    if (!importText.trim()) return;
+
+    const lines = importText.split("\n");
+    const newCards = [];
+
+    for (const line of lines) {
+      const parts = line.split(/\s*-\s*|\t/);
+      if (parts.length >= 2) {
+        const parsedTerm = parts[0].trim();
+        const parsedDef = parts.slice(1).join(" - ").trim();
+
+        if (parsedTerm && parsedDef) {
+          newCards.push({
+            deckId: deckId,
+            term: parsedTerm,
+            definition: parsedDef,
+            level: 0,
             nextReview: new Date(),
-          };
-        })
-        .filter(
-          (c): c is NonNullable<typeof c> =>
-            c !== null && !!c.term && !!c.definition,
-        );
-
-      if (cardData.length === 0) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        Alert.alert(
-          "No valid cards",
-          "Use the format: front - back\nOne card per line.",
-        );
-        return;
+          });
+        }
       }
-
-      await db.insert(cards).values(cardData);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      dispatch({ type: "CLOSE" });
-      loadData();
-    } finally {
-      setIsAdding(false);
     }
-  }, [id, loadData, modal]);
 
-  const handleDeleteCard = useCallback(
-    (cardId: number, term: string) => {
-      Alert.alert("Delete Card", `Delete "${term}"?`, [
-        { text: "Cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            await db.delete(cards).where(eq(cards.id, cardId));
-            loadData();
-          },
-        },
-      ]);
-    },
-    [loadData],
-  );
+    if (newCards.length > 0) {
+      try {
+        await db.insert(cards).values(newCards);
+        setImportText("");
+        setImportModalVisible(false);
+        loadData();
+      } catch (error) {
+        Alert.alert("Error", "Failed to import cards");
+      }
+    } else {
+      Alert.alert(
+        "Invalid Format",
+        "Please follow the format: Term - Definition on each line.",
+      );
+    }
+  };
 
-  const handleDeleteDeck = useCallback(() => {
+  const handleDeleteDeck = async () => {
+    setMenuVisible(false);
     Alert.alert(
       "Delete Deck",
-      `Are you sure you want to delete "${deckName}"?`,
+      "Are you sure you want to delete this deck and all its cards?",
       [
-        { text: "Cancel" },
+        { text: "Cancel", style: "cancel" },
         {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            await db.delete(decks).where(eq(decks.id, Number(id)));
+            await db.delete(decks).where(eq(decks.id, deckId));
             router.replace("/");
           },
         },
       ],
     );
-  }, [deckName, id, router]);
+  };
 
-  const dueCardsCount = deckCards.filter(
-    (c) => new Date(c.nextReview!) <= new Date(),
-  ).length;
+  const handleDeleteCard = async (cardId: number) => {
+    Alert.alert("Delete Card", "Do you want to remove this card?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          await db.delete(cards).where(eq(cards.id, cardId));
+          setDeckCards((prev) => prev.filter((c) => c.id !== cardId));
+        },
+      },
+    ]);
+  };
+
+  if (isLoading) {
+    return (
+      <View className="flex-1 justify-center items-center bg-slate-50 dark:bg-slate-950">
+        <ActivityIndicator size="large" color="#4F46E5" />
+      </View>
+    );
+  }
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-950">
+    <SafeAreaView
+      className="flex-1 bg-slate-50 dark:bg-slate-950"
+      edges={["top"]}
+    >
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* Header */}
-      <View className="px-6 py-4 flex-row justify-between items-center bg-white dark:bg-slate-900 shadow-sm border-b border-slate-100 dark:border-slate-800">
-        <TouchableOpacity
-          onPress={() => router.replace("/")}
-          accessibilityLabel="Go back"
-          accessibilityRole="button"
-        >
-          <Ionicons name="chevron-back" size={28} color="#4F46E5" />
+      <View className="px-6 py-4 flex-row items-center justify-between bg-white dark:bg-slate-950">
+        <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2">
+          <Ionicons name="arrow-back" size={24} color="#64748b" />
         </TouchableOpacity>
-        <Text
-          className="text-xl font-black dark:text-white flex-1 ml-4"
-          numberOfLines={1}
-        >
-          {deckName}
+
+        <Text className="text-lg font-black text-slate-900 dark:text-white">
+          Deck Details
         </Text>
+
         <TouchableOpacity
-          onPress={handleDeleteDeck}
-          accessibilityLabel="Delete deck"
-          accessibilityRole="button"
+          onPress={() => setMenuVisible(true)}
+          className="p-2 -mr-2"
         >
-          <Ionicons name="trash-outline" size={24} color="#EF4444" />
+          <Ionicons name="ellipsis-vertical" size={24} color="#64748b" />
         </TouchableOpacity>
       </View>
 
-      {/* Card List */}
-      {isLoading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#4F46E5" />
+      <Modal
+        transparent
+        visible={menuVisible}
+        animationType="slide"
+        onRequestClose={() => setMenuVisible(false)}
+      >
+        <View className="flex-1 justify-end bg-black/40">
+          <TouchableOpacity
+            className="flex-1"
+            activeOpacity={1}
+            onPress={() => setMenuVisible(false)}
+          />
+          <View className="bg-white dark:bg-slate-900 p-8 rounded-t-[40px] shadow-2xl">
+            <View className="w-12 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full self-center mb-6" />
+
+            <TouchableOpacity
+              onPress={() => {
+                setMenuVisible(false);
+                setAddModalVisible(true);
+              }}
+              className="flex-row items-center p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl mb-3"
+            >
+              <View className="bg-indigo-100 dark:bg-indigo-900/30 p-2 rounded-xl mr-4">
+                <Ionicons name="add-circle" size={24} color="#4F46E5" />
+              </View>
+              <Text className="font-bold text-slate-700 dark:text-slate-200 text-lg">
+                Add Card
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => {
+                setMenuVisible(false);
+                setImportModalVisible(true);
+              }}
+              className="flex-row items-center p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl mb-3"
+            >
+              <View className="bg-green-100 dark:bg-green-900/30 p-2 rounded-xl mr-4">
+                <Ionicons name="clipboard" size={24} color="#10B981" />
+              </View>
+              <View>
+                <Text className="font-bold text-slate-700 dark:text-slate-200 text-lg">
+                  Fast Import
+                </Text>
+                <Text className="text-slate-500 text-xs mt-0.5">
+                  Paste multiple cards
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleDeleteDeck}
+              className="flex-row items-center p-4 bg-red-50 dark:bg-red-900/10 rounded-2xl mb-6"
+            >
+              <View className="bg-red-100 dark:bg-red-900/30 p-2 rounded-xl mr-4">
+                <Ionicons name="trash" size={24} color="#ef4444" />
+              </View>
+              <Text className="font-bold text-red-500 text-lg">
+                Delete Deck
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setMenuVisible(false)}
+              className="w-full py-4 items-center"
+            >
+              <Text className="text-slate-400 font-bold">Cancel</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      ) : (
-        <FlatList
-          data={deckCards}
-          keyExtractor={(item) => item.id.toString()}
-          className="px-4 pt-4"
-          contentContainerStyle={{ paddingBottom: 16 }}
-          ListEmptyComponent={
-            <View className="items-center justify-center py-20">
-              <Text className="text-5xl mb-4">🃏</Text>
-              <Text className="text-slate-500 dark:text-slate-400 font-semibold text-center">
-                No cards yet. Tap + to add some!
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={addModalVisible}
+        onRequestClose={() => setAddModalVisible(false)}
+      >
+        <View className="flex-1 justify-center items-center bg-black/50 p-6">
+          <View className="bg-white dark:bg-slate-900 w-full p-8 rounded-[40px] shadow-2xl">
+            <Text className="text-2xl font-black text-slate-900 dark:text-white mb-6">
+              New Card
+            </Text>
+
+            <TextInput
+              placeholder="Term"
+              placeholderTextColor="#94a3b8"
+              value={term}
+              onChangeText={setTerm}
+              autoFocus
+              className="bg-slate-50 dark:bg-slate-800 p-5 rounded-2xl mb-4 text-slate-900 dark:text-white font-bold"
+            />
+
+            <TextInput
+              placeholder="Definition"
+              placeholderTextColor="#94a3b8"
+              value={definition}
+              onChangeText={setDefinition}
+              multiline
+              className="bg-slate-50 dark:bg-slate-800 p-5 rounded-2xl mb-6 text-slate-900 dark:text-white font-bold min-h-[100px]"
+            />
+
+            <View className="flex-row gap-4">
+              <TouchableOpacity
+                onPress={() => setAddModalVisible(false)}
+                className="flex-1 bg-slate-100 dark:bg-slate-800 p-5 rounded-2xl items-center"
+              >
+                <Text className="text-slate-500 font-bold">Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleCreateCard}
+                className="flex-1 bg-indigo-600 p-5 rounded-2xl items-center shadow-lg shadow-indigo-200"
+              >
+                <Text className="text-white font-black">Create</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={importModalVisible}
+        onRequestClose={() => setImportModalVisible(false)}
+      >
+        <View className="flex-1 justify-center items-center bg-black/50 p-6">
+          <View className="bg-white dark:bg-slate-900 w-full p-8 rounded-[40px] shadow-2xl">
+            <Text className="text-2xl font-black text-slate-900 dark:text-white mb-2">
+              Fast Import
+            </Text>
+            <Text className="text-slate-500 font-bold text-xs mb-6 uppercase tracking-widest">
+              Format: Term - Definition
+            </Text>
+
+            <TextInput
+              placeholder="Apple - A fruit&#10;Car - A vehicle"
+              placeholderTextColor="#94a3b8"
+              value={importText}
+              onChangeText={setImportText}
+              multiline
+              textAlignVertical="top"
+              autoFocus
+              className="bg-slate-50 dark:bg-slate-800 p-5 rounded-2xl mb-6 text-slate-900 dark:text-white font-bold h-48"
+            />
+
+            <View className="flex-row gap-4">
+              <TouchableOpacity
+                onPress={() => setImportModalVisible(false)}
+                className="flex-1 bg-slate-100 dark:bg-slate-800 p-5 rounded-2xl items-center"
+              >
+                <Text className="text-slate-500 font-bold">Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleFastImport}
+                className="flex-1 bg-green-500 p-5 rounded-2xl items-center shadow-lg shadow-green-200"
+              >
+                <Text className="text-white font-black">Import</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <FlatList
+        data={deckCards}
+        keyExtractor={(item) => item.id.toString()}
+        extraData={deck}
+        ListHeaderComponent={() => (
+          <View className="px-6 py-4">
+            <View className="bg-indigo-600 p-8 rounded-[40px] shadow-xl mb-8">
+              <Text className="text-white text-3xl font-black mb-2">
+                {deck?.name || "Untitled Deck"}
+              </Text>
+              <Text className="text-indigo-100 font-bold opacity-80">
+                {deckCards.length} cards in total
               </Text>
             </View>
-          }
-          renderItem={({ item }) => (
-            <View className="bg-white dark:bg-slate-900 p-4 rounded-2xl mb-3 flex-row items-center shadow-sm">
-              <View className="flex-1 mr-3">
-                <Text className="font-bold dark:text-white text-base">
-                  {item.term}
-                </Text>
-                <Text className="text-slate-500 text-sm mt-0.5">
-                  {item.definition}
-                </Text>
+
+            <Text className="text-slate-400 font-black text-xs uppercase tracking-widest mb-4 ml-2">
+              Learning Modes
+            </Text>
+
+            <TouchableOpacity
+              onPress={() =>
+                router.push({ pathname: "/study", params: { id } })
+              }
+              className="bg-white dark:bg-slate-900 p-5 rounded-3xl flex-row items-center border border-slate-100 dark:border-slate-800 mb-4 shadow-sm"
+            >
+              <View className="bg-indigo-100 dark:bg-indigo-900/30 p-3 rounded-2xl mr-4">
+                <Ionicons name="book" size={24} color="#4F46E5" />
               </View>
-              <View className="flex-row items-center gap-2">
-                <View className="bg-indigo-50 dark:bg-indigo-950 px-2 py-1 rounded-md">
-                  <Text className="text-[10px] font-bold text-indigo-600">
-                    LVL {item.level}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  onPress={() => handleDeleteCard(item.id, item.term)}
-                  className="p-2"
-                  accessibilityLabel={`Delete card ${item.term}`}
-                  accessibilityRole="button"
-                >
-                  <Ionicons name="trash-outline" size={16} color="#94a3b8" />
-                </TouchableOpacity>
+              <View className="flex-1">
+                <Text className="font-black text-slate-900 dark:text-white text-lg">
+                  Study
+                </Text>
+                <Text className="text-slate-500 text-sm">Personalized SRS</Text>
               </View>
-            </View>
-          )}
-        />
-      )}
+              <Ionicons name="chevron-forward" size={20} color="#cbd5e1" />
+            </TouchableOpacity>
 
-      {/* Study Buttons */}
-      <View className="px-6 pt-4 pb-6 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex-row gap-3">
-        <TouchableOpacity
-          onPress={() => router.push(`/study?id=${id}&mode=due`)}
-          className={`flex-1 py-4 rounded-2xl items-center ${dueCardsCount > 0 ? "bg-indigo-100 dark:bg-indigo-950" : "bg-slate-100 dark:bg-slate-800 opacity-50"}`}
-          disabled={dueCardsCount === 0}
-          accessibilityLabel={`Review ${dueCardsCount} due cards`}
-          accessibilityRole="button"
-        >
-          <Text
-            className={`font-bold ${dueCardsCount > 0 ? "text-indigo-600" : "text-slate-400"}`}
-          >
-            Review ({dueCardsCount})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => router.push(`/study?id=${id}&mode=all`)}
-          className="flex-1 bg-indigo-600 py-4 rounded-2xl items-center shadow-lg"
-          accessibilityLabel="Study all cards"
-          accessibilityRole="button"
-        >
-          <Text className="text-white font-bold">Study All</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* FAB */}
-      <TouchableOpacity
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          dispatch({ type: "OPEN_MENU" });
-        }}
-        className="absolute bottom-36 right-6 w-14 h-14 bg-indigo-600 rounded-full items-center justify-center shadow-lg"
-        accessibilityLabel="Add cards"
-        accessibilityRole="button"
-      >
-        <Ionicons name="add" size={30} color="white" />
-      </TouchableOpacity>
-
-      {/* Add Card Modal */}
-      <Modal
-        visible={modal.open}
-        transparent
-        animationType="slide"
-        onRequestClose={() => dispatch({ type: "CLOSE" })}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          className="flex-1"
-        >
-          {/* Scrim */}
-          <TouchableOpacity
-            className="flex-1 bg-black/40"
-            activeOpacity={1}
-            onPress={() => dispatch({ type: "CLOSE" })}
-          />
-
-          {/* Sheet */}
-          <View className="bg-white dark:bg-slate-900 rounded-t-3xl px-6 pt-4 pb-10">
-            {/* Handle */}
-            <View className="w-10 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full self-center mb-6" />
-
-            {/* ── Menu ── */}
-            {modal.open && modal.mode === "menu" && (
-              <>
-                <Text className="text-xl font-black text-indigo-950 dark:text-white mb-6">
-                  Add Cards
+            <TouchableOpacity
+              onPress={() => router.push({ pathname: "/test", params: { id } })}
+              className="bg-white dark:bg-slate-900 p-5 rounded-3xl flex-row items-center border border-slate-100 dark:border-slate-800 mb-8 shadow-sm"
+            >
+              <View className="bg-orange-100 dark:bg-orange-900/30 p-3 rounded-2xl mr-4">
+                <Ionicons name="clipboard" size={24} color="#F59E0B" />
+              </View>
+              <View className="flex-1">
+                <Text className="font-black text-slate-900 dark:text-white text-lg">
+                  Test
                 </Text>
+                <Text className="text-slate-500 text-sm">Mixed formats</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#cbd5e1" />
+            </TouchableOpacity>
 
-                <TouchableOpacity
-                  onPress={() => dispatch({ type: "SET_MODE", mode: "single" })}
-                  className="bg-indigo-50 dark:bg-indigo-950 rounded-2xl p-5 mb-3 flex-row items-center gap-4"
-                  accessibilityRole="button"
-                >
-                  <View className="w-10 h-10 bg-indigo-600 rounded-xl items-center justify-center">
-                    <Ionicons name="create-outline" size={20} color="white" />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="font-black text-indigo-950 dark:text-white text-base">
-                      Add a Card
-                    </Text>
-                    <Text className="text-slate-500 text-sm mt-0.5">
-                      Enter word and definition manually
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => dispatch({ type: "SET_MODE", mode: "bulk" })}
-                  className="bg-indigo-50 dark:bg-indigo-950 rounded-2xl p-5 flex-row items-center gap-4"
-                  accessibilityRole="button"
-                >
-                  <View className="w-10 h-10 bg-indigo-600 rounded-xl items-center justify-center">
-                    <Ionicons name="list-outline" size={20} color="white" />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="font-black text-indigo-950 dark:text-white text-base">
-                      Bulk Import
-                    </Text>
-                    <Text className="text-slate-500 text-sm mt-0.5">
-                      Paste cards as "front - back"
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
-                </TouchableOpacity>
-              </>
-            )}
-
-            {/* ── Single Card Form ── */}
-            {modal.open && modal.mode === "single" && (
-              <>
-                <View className="flex-row items-center mb-6">
-                  <TouchableOpacity
-                    onPress={() => dispatch({ type: "SET_MODE", mode: "menu" })}
-                    className="mr-3"
-                    accessibilityLabel="Back"
-                    accessibilityRole="button"
-                  >
-                    <Ionicons name="chevron-back" size={22} color="#4F46E5" />
-                  </TouchableOpacity>
-                  <Text className="text-xl font-black text-indigo-950 dark:text-white">
-                    Add a Card
-                  </Text>
-                </View>
-
-                <TextInput
-                  placeholder="Word or phrase"
-                  placeholderTextColor="#94a3b8"
-                  className="bg-slate-50 dark:bg-slate-800 dark:text-white text-slate-800 p-4 rounded-2xl mb-3 text-base font-medium"
-                  value={modal.term}
-                  onChangeText={(v) => dispatch({ type: "SET_TERM", value: v })}
-                  accessibilityLabel="Term input"
-                  returnKeyType="next"
-                  autoFocus
-                />
-                <TextInput
-                  placeholder="Definition"
-                  placeholderTextColor="#94a3b8"
-                  className="bg-slate-50 dark:bg-slate-800 dark:text-white text-slate-800 p-4 rounded-2xl mb-5 text-base font-medium"
-                  value={modal.def}
-                  onChangeText={(v) => dispatch({ type: "SET_DEF", value: v })}
-                  accessibilityLabel="Definition input"
-                  returnKeyType="done"
-                  onSubmitEditing={handleAddCard}
-                />
-                <TouchableOpacity
-                  onPress={handleAddCard}
-                  disabled={isAdding}
-                  className="bg-indigo-600 p-5 rounded-2xl items-center"
-                  style={{ opacity: isAdding ? 0.7 : 1 }}
-                  accessibilityRole="button"
-                >
-                  {isAdding ? (
-                    <ActivityIndicator color="white" />
-                  ) : (
-                    <Text className="text-white font-black text-base">
-                      Add Card
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              </>
-            )}
-
-            {/* ── Bulk Import Form ── */}
-            {modal.open && modal.mode === "bulk" && (
-              <>
-                <View className="flex-row items-center mb-4">
-                  <TouchableOpacity
-                    onPress={() => dispatch({ type: "SET_MODE", mode: "menu" })}
-                    className="mr-3"
-                    accessibilityLabel="Back"
-                    accessibilityRole="button"
-                  >
-                    <Ionicons name="chevron-back" size={22} color="#4F46E5" />
-                  </TouchableOpacity>
-                  <Text className="text-xl font-black text-indigo-950 dark:text-white">
-                    Bulk Import
-                  </Text>
-                </View>
-
-                <Text className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
-                  One card per line · Format: front - back
-                </Text>
-                <TextInput
-                  placeholder={"hello - a friendly greeting\nworld - the earth"}
-                  placeholderTextColor="#94a3b8"
-                  multiline
-                  className="bg-slate-50 dark:bg-slate-800 dark:text-white text-slate-800 p-4 rounded-2xl mb-5 text-base"
-                  textAlignVertical="top"
-                  style={{ minHeight: 140 }}
-                  value={modal.bulk}
-                  onChangeText={(v) => dispatch({ type: "SET_BULK", value: v })}
-                  accessibilityLabel="Bulk import input"
-                  autoFocus
-                />
-                <TouchableOpacity
-                  onPress={handleBulkImport}
-                  disabled={isAdding}
-                  className="bg-indigo-600 p-5 rounded-2xl items-center"
-                  style={{ opacity: isAdding ? 0.7 : 1 }}
-                  accessibilityRole="button"
-                >
-                  {isAdding ? (
-                    <ActivityIndicator color="white" />
-                  ) : (
-                    <Text className="text-white font-black text-base">
-                      Import Cards
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              </>
-            )}
+            <Text className="text-slate-400 font-black text-xs uppercase tracking-widest mb-4 ml-2">
+              Cards list
+            </Text>
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        )}
+        renderItem={({ item }) => (
+          <View className="mx-6 mb-3 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 flex-row justify-between items-center">
+            <View className="flex-1 pr-4">
+              <Text className="font-bold text-slate-900 dark:text-white text-lg">
+                {item.term}
+              </Text>
+              <Text className="text-slate-500 mt-1">{item.definition}</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => handleDeleteCard(item.id)}
+              className="p-2"
+            >
+              <Ionicons name="trash-outline" size={20} color="#94a3b8" />
+            </TouchableOpacity>
+          </View>
+        )}
+        ListFooterComponent={<View className="h-10" />}
+      />
     </SafeAreaView>
   );
 }

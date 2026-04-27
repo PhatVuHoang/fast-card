@@ -1,4 +1,5 @@
 import { db } from "@db/client";
+import type { Deck } from "@db/schema";
 import { cards, decks } from "@db/schema";
 import { Ionicons } from "@expo/vector-icons";
 import { eq, sql } from "drizzle-orm";
@@ -15,18 +16,22 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+type DeckWithStats = Deck & { cardCount: number; masteredCount: number };
+
 export default function Home() {
-  const [allDecks, setAllDecks] = useState<any[]>([]);
+  const [allDecks, setAllDecks] = useState<DeckWithStats[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { colorScheme, setColorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
 
-  const fetchDecks = async () => {
+  const fetchDecks = useCallback(async () => {
     try {
       const result = await db
         .select({
           id: decks.id,
           name: decks.name,
+          description: decks.description,
+          createdAt: decks.createdAt,
           cardCount: sql<number>`COUNT(${cards.id})`.mapWith(Number),
           masteredCount: sql<number>`
             ROUND(
@@ -40,18 +45,18 @@ export default function Home() {
         .from(decks)
         .leftJoin(cards, eq(decks.id, cards.deckId))
         .groupBy(decks.id);
-      setAllDecks(result);
+      setAllDecks(result as DeckWithStats[]);
     } catch (error) {
       console.error("Failed to load decks:", error);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
       fetchDecks();
-    }, []),
+    }, [fetchDecks]),
   );
 
   return (

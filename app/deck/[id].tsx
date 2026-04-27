@@ -1,10 +1,11 @@
 import { db } from "@db/client";
+import type { Card } from "@db/schema";
 import { cards, decks } from "@db/schema";
 import { Ionicons } from "@expo/vector-icons";
 import { eq } from "drizzle-orm";
 import * as Haptics from "expo-haptics";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useReducer, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -19,23 +20,58 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-type AddMode = null | "menu" | "single" | "bulk";
+// ── Modal state via useReducer ───────────────────────────────────────────────
+type AddMode = "menu" | "single" | "bulk";
+
+type ModalState =
+  | { open: false }
+  | { open: true; mode: AddMode; term: string; def: string; bulk: string };
+
+type ModalAction =
+  | { type: "OPEN_MENU" }
+  | { type: "SET_MODE"; mode: AddMode }
+  | { type: "SET_TERM"; value: string }
+  | { type: "SET_DEF"; value: string }
+  | { type: "SET_BULK"; value: string }
+  | { type: "CLOSE" };
+
+const MODAL_CLOSED: ModalState = { open: false };
+
+function modalReducer(state: ModalState, action: ModalAction): ModalState {
+  switch (action.type) {
+    case "OPEN_MENU":
+      return { open: true, mode: "menu", term: "", def: "", bulk: "" };
+    case "SET_MODE":
+      if (!state.open) return state;
+      return { ...state, mode: action.mode };
+    case "SET_TERM":
+      if (!state.open) return state;
+      return { ...state, term: action.value };
+    case "SET_DEF":
+      if (!state.open) return state;
+      return { ...state, def: action.value };
+    case "SET_BULK":
+      if (!state.open) return state;
+      return { ...state, bulk: action.value };
+    case "CLOSE":
+      return MODAL_CLOSED;
+    default:
+      return state;
+  }
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 export default function DeckDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-  const [deckCards, setDeckCards] = useState<any[]>([]);
+  const [deckCards, setDeckCards] = useState<Card[]>([]);
   const [deckName, setDeckName] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
 
-  // Modal state
-  const [addMode, setAddMode] = useState<AddMode>(null);
-  const [newTerm, setNewTerm] = useState("");
-  const [newDef, setNewDef] = useState("");
-  const [bulkContent, setBulkContent] = useState("");
+  const [modal, dispatch] = useReducer(modalReducer, MODAL_CLOSED);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const deckInfo = await db
         .select()
@@ -50,42 +86,37 @@ export default function DeckDetailScreen() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
     loadData();
-  }, [id]);
+  }, [loadData]);
 
-  const closeModal = () => {
-    setAddMode(null);
-    setNewTerm("");
-    setNewDef("");
-    setBulkContent("");
-  };
-
-  const handleAddCard = async () => {
-    if (!newTerm.trim() || !newDef.trim()) return;
+  const handleAddCard = useCallback(async () => {
+    if (!modal.open || modal.mode !== "single") return;
+    if (!modal.term.trim() || !modal.def.trim()) return;
     setIsAdding(true);
     try {
       await db.insert(cards).values({
         deckId: Number(id),
-        term: newTerm.trim(),
-        definition: newDef.trim(),
+        term: modal.term.trim(),
+        definition: modal.def.trim(),
         nextReview: new Date(),
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      closeModal();
+      dispatch({ type: "CLOSE" });
       loadData();
     } finally {
       setIsAdding(false);
     }
-  };
+  }, [id, loadData, modal]);
 
-  const handleBulkImport = async () => {
-    if (!bulkContent.trim()) return;
+  const handleBulkImport = useCallback(async () => {
+    if (!modal.open || modal.mode !== "bulk") return;
+    if (!modal.bulk.trim()) return;
     setIsAdding(true);
     try {
-      const cardData = bulkContent
+      const cardData = modal.bulk
         .split("\n")
         .map((line) => {
           const sep = line.indexOf(" - ");
@@ -113,29 +144,32 @@ export default function DeckDetailScreen() {
 
       await db.insert(cards).values(cardData);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      closeModal();
+      dispatch({ type: "CLOSE" });
       loadData();
     } finally {
       setIsAdding(false);
     }
-  };
+  }, [id, loadData, modal]);
 
-  const handleDeleteCard = (cardId: number, term: string) => {
-    Alert.alert("Delete Card", `Delete "${term}"?`, [
-      { text: "Cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          await db.delete(cards).where(eq(cards.id, cardId));
-          loadData();
+  const handleDeleteCard = useCallback(
+    (cardId: number, term: string) => {
+      Alert.alert("Delete Card", `Delete "${term}"?`, [
+        { text: "Cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            await db.delete(cards).where(eq(cards.id, cardId));
+            loadData();
+          },
         },
-      },
-    ]);
-  };
+      ]);
+    },
+    [loadData],
+  );
 
-  const handleDeleteDeck = () => {
+  const handleDeleteDeck = useCallback(() => {
     Alert.alert(
       "Delete Deck",
       `Are you sure you want to delete "${deckName}"?`,
@@ -151,10 +185,10 @@ export default function DeckDetailScreen() {
         },
       ],
     );
-  };
+  }, [deckName, id, router]);
 
   const dueCardsCount = deckCards.filter(
-    (c) => new Date(c.nextReview) <= new Date(),
+    (c) => new Date(c.nextReview!) <= new Date(),
   ).length;
 
   return (
@@ -263,7 +297,7 @@ export default function DeckDetailScreen() {
       <TouchableOpacity
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          setAddMode("menu");
+          dispatch({ type: "OPEN_MENU" });
         }}
         className="absolute bottom-36 right-6 w-14 h-14 bg-indigo-600 rounded-full items-center justify-center shadow-lg"
         accessibilityLabel="Add cards"
@@ -274,10 +308,10 @@ export default function DeckDetailScreen() {
 
       {/* Add Card Modal */}
       <Modal
-        visible={addMode !== null}
+        visible={modal.open}
         transparent
         animationType="slide"
-        onRequestClose={closeModal}
+        onRequestClose={() => dispatch({ type: "CLOSE" })}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -287,7 +321,7 @@ export default function DeckDetailScreen() {
           <TouchableOpacity
             className="flex-1 bg-black/40"
             activeOpacity={1}
-            onPress={closeModal}
+            onPress={() => dispatch({ type: "CLOSE" })}
           />
 
           {/* Sheet */}
@@ -296,14 +330,14 @@ export default function DeckDetailScreen() {
             <View className="w-10 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full self-center mb-6" />
 
             {/* ── Menu ── */}
-            {addMode === "menu" && (
+            {modal.open && modal.mode === "menu" && (
               <>
                 <Text className="text-xl font-black text-indigo-950 dark:text-white mb-6">
                   Add Cards
                 </Text>
 
                 <TouchableOpacity
-                  onPress={() => setAddMode("single")}
+                  onPress={() => dispatch({ type: "SET_MODE", mode: "single" })}
                   className="bg-indigo-50 dark:bg-indigo-950 rounded-2xl p-5 mb-3 flex-row items-center gap-4"
                   accessibilityRole="button"
                 >
@@ -322,7 +356,7 @@ export default function DeckDetailScreen() {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  onPress={() => setAddMode("bulk")}
+                  onPress={() => dispatch({ type: "SET_MODE", mode: "bulk" })}
                   className="bg-indigo-50 dark:bg-indigo-950 rounded-2xl p-5 flex-row items-center gap-4"
                   accessibilityRole="button"
                 >
@@ -343,11 +377,11 @@ export default function DeckDetailScreen() {
             )}
 
             {/* ── Single Card Form ── */}
-            {addMode === "single" && (
+            {modal.open && modal.mode === "single" && (
               <>
                 <View className="flex-row items-center mb-6">
                   <TouchableOpacity
-                    onPress={() => setAddMode("menu")}
+                    onPress={() => dispatch({ type: "SET_MODE", mode: "menu" })}
                     className="mr-3"
                     accessibilityLabel="Back"
                     accessibilityRole="button"
@@ -363,8 +397,8 @@ export default function DeckDetailScreen() {
                   placeholder="Word or phrase"
                   placeholderTextColor="#94a3b8"
                   className="bg-slate-50 dark:bg-slate-800 dark:text-white text-slate-800 p-4 rounded-2xl mb-3 text-base font-medium"
-                  value={newTerm}
-                  onChangeText={setNewTerm}
+                  value={modal.term}
+                  onChangeText={(v) => dispatch({ type: "SET_TERM", value: v })}
                   accessibilityLabel="Term input"
                   returnKeyType="next"
                   autoFocus
@@ -373,8 +407,8 @@ export default function DeckDetailScreen() {
                   placeholder="Definition"
                   placeholderTextColor="#94a3b8"
                   className="bg-slate-50 dark:bg-slate-800 dark:text-white text-slate-800 p-4 rounded-2xl mb-5 text-base font-medium"
-                  value={newDef}
-                  onChangeText={setNewDef}
+                  value={modal.def}
+                  onChangeText={(v) => dispatch({ type: "SET_DEF", value: v })}
                   accessibilityLabel="Definition input"
                   returnKeyType="done"
                   onSubmitEditing={handleAddCard}
@@ -398,11 +432,11 @@ export default function DeckDetailScreen() {
             )}
 
             {/* ── Bulk Import Form ── */}
-            {addMode === "bulk" && (
+            {modal.open && modal.mode === "bulk" && (
               <>
                 <View className="flex-row items-center mb-4">
                   <TouchableOpacity
-                    onPress={() => setAddMode("menu")}
+                    onPress={() => dispatch({ type: "SET_MODE", mode: "menu" })}
                     className="mr-3"
                     accessibilityLabel="Back"
                     accessibilityRole="button"
@@ -424,8 +458,8 @@ export default function DeckDetailScreen() {
                   className="bg-slate-50 dark:bg-slate-800 dark:text-white text-slate-800 p-4 rounded-2xl mb-5 text-base"
                   textAlignVertical="top"
                   style={{ minHeight: 140 }}
-                  value={bulkContent}
-                  onChangeText={setBulkContent}
+                  value={modal.bulk}
+                  onChangeText={(v) => dispatch({ type: "SET_BULK", value: v })}
                   accessibilityLabel="Bulk import input"
                   autoFocus
                 />

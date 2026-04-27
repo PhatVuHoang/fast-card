@@ -25,3 +25,6 @@ export const cards = sqliteTable("cards", {
   ),
   isFavorite: integer("is_favorite", { mode: "boolean" }).default(false),
 });
+
+export type Deck = typeof decks.$inferSelect;
+export type Card = typeof cards.$inferSelect;

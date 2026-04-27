@@ -6,7 +6,6 @@ export default function TabLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="study" options={{ presentation: "modal" }} />
-      {/* <Stack.Screen name="import" options={{ presentation: "modal" }} /> */}
     </Stack>
   );
 }

@@ -1,11 +1,12 @@
 import { Flashcard } from "@components/Card";
 import { db } from "@db/client";
+import type { Card } from "@db/schema";
 import { cards } from "@db/schema";
 import { Ionicons } from "@expo/vector-icons";
 import { eq } from "drizzle-orm";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import {
   SafeAreaView,
@@ -17,7 +18,7 @@ export default function StudyScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const [allCards, setAllCards] = useState<any[]>([]);
+  const [allCards, setAllCards] = useState<Card[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [sessionStats, setSessionStats] = useState({ known: 0, learning: 0 });
   const [isLoading, setIsLoading] = useState(true);
@@ -42,33 +43,36 @@ export default function StudyScreen() {
   const filteredCards = useMemo(() => {
     if (mode === "all") return allCards;
     const now = new Date();
-    return allCards.filter((c) => new Date(c.nextReview) <= now);
+    return allCards.filter((c) => new Date(c.nextReview!) <= now);
   }, [allCards, mode]);
 
-  const handleAnswer = async (known: boolean) => {
-    const currentCard = filteredCards[currentIndex];
-    if (!currentCard) return;
+  const handleAnswer = useCallback(
+    async (known: boolean) => {
+      const currentCard = filteredCards[currentIndex];
+      if (!currentCard) return;
 
-    if (known) {
-      setSessionStats((s) => ({ ...s, known: s.known + 1 }));
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } else {
-      setSessionStats((s) => ({ ...s, learning: s.learning + 1 }));
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    }
+      if (known) {
+        setSessionStats((s) => ({ ...s, known: s.known + 1 }));
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        setSessionStats((s) => ({ ...s, learning: s.learning + 1 }));
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      }
 
-    const newLevel = known ? Math.min((currentCard.level || 0) + 1, 5) : 0;
-    const daysToAdd = Math.pow(2, newLevel);
-    const nextReview = new Date(
-      Date.now() + (known ? daysToAdd * 24 * 60 * 60 * 1000 : 0),
-    );
+      const newLevel = known ? Math.min((currentCard.level ?? 0) + 1, 5) : 0;
+      const daysToAdd = Math.pow(2, newLevel);
+      const nextReview = new Date(
+        Date.now() + (known ? daysToAdd * 24 * 60 * 60 * 1000 : 0),
+      );
 
-    await db
-      .update(cards)
-      .set({ level: newLevel, nextReview })
-      .where(eq(cards.id, currentCard.id));
-    setCurrentIndex((prev) => prev + 1);
-  };
+      await db
+        .update(cards)
+        .set({ level: newLevel, nextReview })
+        .where(eq(cards.id, currentCard.id));
+      setCurrentIndex((prev) => prev + 1);
+    },
+    [filteredCards, currentIndex],
+  );
 
   if (isLoading)
     return (

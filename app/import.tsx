@@ -132,7 +132,7 @@ export default function ImportScreen() {
             <ActivityIndicator color="white" />
           ) : (
             <Text className="text-white font-black text-lg">
-              Bắt đầu nạp thẻ 🚀
+              Create a new deck 🚀
             </Text>
           )}
         </TouchableOpacity>

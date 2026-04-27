@@ -35,6 +35,21 @@ export const Flashcard = ({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
 
+  const handleFlip = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    scale.value = withSpring(0.95, { damping: 10, mass: 1 }, () => {
+      scale.value = withSpring(1, { damping: 10, mass: 1 });
+    });
+    spin.value = withSpring(spin.value === 0 ? 1 : 0, { damping: 12, mass: 1 });
+  };
+
+  const tapGesture = Gesture.Tap().onEnd((event) => {
+    if (event.x > cardWidth - 80 && event.y < 80) {
+      return;
+    }
+    runOnJS(handleFlip)();
+  });
+
   const panGesture = Gesture.Pan()
     .onUpdate((event) => {
       translateX.value = event.translationX;
@@ -57,13 +72,14 @@ export const Flashcard = ({
       }
     });
 
+  const composedGesture = Gesture.Exclusive(panGesture, tapGesture);
+
   const animatedCardStyle = useAnimatedStyle(() => {
     const rotateZ = interpolate(
       translateX.value,
       [-width / 2, width / 2],
       [-15, 15],
     );
-
     return {
       transform: [
         { translateX: translateX.value },
@@ -91,69 +107,10 @@ export const Flashcard = ({
     opacity: interpolate(spin.value, [0, 0.4, 0.6, 1], [0, 0.1, 0.9, 1]),
   }));
 
-  const overlayStyle = useAnimatedStyle(() => {
-    const opacityRight = interpolate(
-      translateX.value,
-      [0, SWIPE_THRESHOLD],
-      [0, 0.5],
-      "clamp",
-    );
-    const opacityLeft = interpolate(
-      translateX.value,
-      [0, -SWIPE_THRESHOLD],
-      [0, 0.5],
-      "clamp",
-    );
-
-    return {
-      backgroundColor: translateX.value > 0 ? "#4ade80" : "#f87171",
-      opacity: translateX.value > 0 ? opacityRight : opacityLeft,
-    };
-  });
-
   const playSound = (text: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Speech.speak(text, { language: "en-US", pitch: 1.0, rate: 0.9 });
   };
-
-  const handleFlip = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    scale.value = withSpring(0.95, { damping: 10, mass: 1 }, () => {
-      scale.value = withSpring(1, { damping: 10, mass: 1 });
-    });
-    spin.value = withSpring(spin.value === 0 ? 1 : 0, { damping: 12, mass: 1 });
-  };
-
-  const CardContent = ({
-    text,
-    isFront,
-  }: {
-    text: string;
-    isFront: boolean;
-  }) => (
-    <Pressable
-      onPress={handleFlip}
-      className="flex-1 w-full px-8 py-10 justify-center items-center"
-    >
-      <View className="flex-1 w-full justify-center items-center px-4 gap-4">
-        <Text
-          className={`text-center leading-tight ${
-            isFront
-              ? "text-3xl sm:text-4xl font-black text-indigo-950 dark:text-white"
-              : "text-lg sm:text-xl font-semibold text-white"
-          }`}
-          numberOfLines={isFront ? 4 : 8}
-        >
-          {text}
-        </Text>
-      </View>
-      <Text
-        className={`text-xs font-semibold tracking-wider ${isFront ? "text-indigo-500 dark:text-indigo-400" : "text-indigo-200"}`}
-      >
-        {isFront ? "TAP TO REVEAL" : "TAP TO GO BACK"}
-      </Text>
-    </Pressable>
-  );
 
   const cardStyle = {
     position: "absolute" as const,
@@ -164,55 +121,55 @@ export const Flashcard = ({
   };
 
   return (
-    <GestureDetector gesture={panGesture}>
+    <GestureDetector gesture={composedGesture}>
       <Animated.View
         style={[animatedCardStyle, { width: cardWidth, height: cardHeight }]}
       >
-        <Animated.View style={[frontStyle, cardStyle]}>
-          <View className="absolute inset-0 bg-white dark:bg-slate-900 rounded-4xl" />
-          <View className="absolute inset-0 rounded-4xl shadow-2xl" />
-          <Animated.View
-            style={[
-              overlayStyle,
-              { position: "absolute", inset: 0, zIndex: 1 },
-            ]}
-          />
-          <CardContent text={term} isFront={true} />
-
+        {/* FRONT */}
+        <Animated.View
+          style={[frontStyle, cardStyle]}
+          className="bg-white dark:bg-slate-900 shadow-xl border border-slate-100 dark:border-slate-800"
+        >
+          <View className="flex-1 justify-center items-center px-8">
+            <Text className="text-3xl font-black text-indigo-950 dark:text-white text-center">
+              {term}
+            </Text>
+            <Text className="text-indigo-400 font-bold mt-4 text-[10px] tracking-widest uppercase">
+              Tap to reveal
+            </Text>
+          </View>
           <Pressable
-            onPress={(e) => {
-              e.stopPropagation();
-              playSound(term);
-            }}
-            className="absolute top-6 right-6 bg-white dark:bg-slate-700 rounded-full shadow-lg p-3 z-50"
+            onPress={() => playSound(term)}
+            className="absolute top-6 right-6 p-4 bg-indigo-50 dark:bg-slate-800 rounded-full z-50"
           >
             <MaterialCommunityIcons
               name="volume-high"
-              size={24}
-              color={isDark ? "#818CF8" : "#4F46E5"}
+              size={20}
+              color="#4F46E5"
             />
           </Pressable>
         </Animated.View>
 
-        <Animated.View style={[backStyle, cardStyle]}>
-          <View className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-indigo-700 to-indigo-900 rounded-4xl" />
-          <Animated.View
-            style={[
-              overlayStyle,
-              { position: "absolute", inset: 0, zIndex: 1 },
-            ]}
-          />
-          <CardContent text={definition} isFront={false} />
+        {/* BACK */}
+        <Animated.View
+          style={[backStyle, cardStyle]}
+          className="bg-indigo-600 shadow-xl"
+        >
+          <View className="flex-1 justify-center items-center px-8">
+            <Text className="text-xl font-bold text-white text-center">
+              {definition}
+            </Text>
+            <Text className="text-indigo-200 font-bold mt-4 text-[10px] tracking-widest uppercase">
+              Tap to go back
+            </Text>
+          </View>
           <Pressable
-            onPress={(e) => {
-              e.stopPropagation();
-              playSound(definition);
-            }}
-            className="absolute top-6 right-6 bg-indigo-400 bg-opacity-60 rounded-full shadow-lg p-3 z-50"
+            onPress={() => playSound(definition)}
+            className="absolute top-6 right-6 p-4 bg-indigo-500 rounded-full z-50"
           >
             <MaterialCommunityIcons
               name="volume-high"
-              size={24}
+              size={20}
               color="white"
             />
           </Pressable>

@@ -11,7 +11,7 @@ export default function ImportScreen() {
 
   const handleImport = async () => {
     if (!deckName || !content)
-      return Alert.alert("Thiếu thông tin rồi Phát ơi!");
+      return Alert.alert("Thiếu thông tin rồi bạn ơi!");
 
     try {
       const newDeck = await db

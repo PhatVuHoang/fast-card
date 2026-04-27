@@ -1,321 +1,183 @@
 import { Flashcard } from "@components/Card";
 import { db } from "@db/client";
 import { cards } from "@db/schema";
-import { and, eq, lte } from "drizzle-orm";
+import { Ionicons } from "@expo/vector-icons";
+import { eq } from "drizzle-orm";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useColorScheme } from "nativewind";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import {
-  ActivityIndicator,
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
 export default function StudyScreen() {
-  const { id } = useLocalSearchParams();
+  const { id, mode } = useLocalSearchParams();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const [queue, setQueue] = useState<any[]>([]);
+  const [allCards, setAllCards] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [completedCount, setCompletedCount] = useState(0);
+  const [sessionStats, setSessionStats] = useState({ known: 0, learning: 0 });
   const [isLoading, setIsLoading] = useState(true);
-  const [isAnswering, setIsAnswering] = useState(false);
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === "dark";
 
   useEffect(() => {
-    const loadCards = async () => {
+    const loadData = async () => {
       try {
-        const now = new Date();
-
         const result = await db
           .select()
           .from(cards)
-          .where(and(eq(cards.deckId, Number(id)), lte(cards.nextReview, now)));
-
-        setQueue(result.sort(() => Math.random() - 0.5));
-      } catch (error) {
-        console.error("Failed to load cards:", error);
+          .where(eq(cards.deckId, Number(id)));
+        setAllCards(result.sort(() => Math.random() - 0.5));
+      } catch (err) {
+        console.error(err);
       } finally {
         setIsLoading(false);
       }
     };
-    loadCards();
+    loadData();
   }, [id]);
 
-  const currentCard = queue[currentIndex];
-  const progressPercentage =
-    queue.length > 0 ? (completedCount / queue.length) * 100 : 0;
+  const filteredCards = useMemo(() => {
+    if (mode === "all") return allCards;
+    const now = new Date();
+    return allCards.filter((c) => new Date(c.nextReview) <= now);
+  }, [allCards, mode]);
 
   const handleAnswer = async (known: boolean) => {
-    if (!currentCard || isAnswering) return;
-    setIsAnswering(true);
-    try {
-      if (known) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        const newLevel = Math.min((currentCard.level || 0) + 1, 5);
-        const daysToAdd = Math.pow(2, newLevel);
-        await db
-          .update(cards)
-          .set({
-            level: newLevel,
-            nextReview: new Date(Date.now() + daysToAdd * 24 * 60 * 60 * 1000),
-          })
-          .where(eq(cards.id, currentCard.id));
-        setCompletedCount((prev) => prev + 1);
-        nextCard();
-      } else {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        await db
-          .update(cards)
-          .set({ level: 0, nextReview: new Date() })
-          .where(eq(cards.id, currentCard.id));
-        const reorderedQueue = [...queue];
-        const [missedCard] = reorderedQueue.splice(currentIndex, 1);
-        setQueue([...reorderedQueue, missedCard]);
-      }
-    } catch (error) {
-      console.error("Failed to update card:", error);
-    } finally {
-      setIsAnswering(false);
-    }
-  };
+    const currentCard = filteredCards[currentIndex];
+    if (!currentCard) return;
 
-  const nextCard = () => {
-    if (currentIndex < queue.length - 1) {
-      setCurrentIndex((prev) => prev + 1);
+    if (known) {
+      setSessionStats((s) => ({ ...s, known: s.known + 1 }));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } else {
-      setCurrentIndex(-1);
+      setSessionStats((s) => ({ ...s, learning: s.learning + 1 }));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     }
+
+    const newLevel = known ? Math.min((currentCard.level || 0) + 1, 5) : 0;
+    const daysToAdd = Math.pow(2, newLevel);
+    const nextReview = new Date(
+      Date.now() + (known ? daysToAdd * 24 * 60 * 60 * 1000 : 0),
+    );
+
+    await db
+      .update(cards)
+      .set({ level: newLevel, nextReview })
+      .where(eq(cards.id, currentCard.id));
+    setCurrentIndex((prev) => prev + 1);
   };
 
-  if (isLoading) {
+  if (isLoading)
     return (
-      <View
-        className="flex-1 bg-indigo-50 dark:bg-slate-950"
-        style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
-      >
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator
-            size="large"
-            color={isDark ? "#818CF8" : "#4F46E5"}
-          />
-          <Text className="text-indigo-600 dark:text-indigo-400 font-medium mt-3">
-            Loading cards...
-          </Text>
-        </View>
+      <View className="flex-1 items-center justify-center dark:bg-slate-950">
+        <ActivityIndicator size="large" color="#4F46E5" />
       </View>
     );
-  }
 
-  if (!isLoading && queue.length === 0 && completedCount === 0) {
+  if (filteredCards.length === 0) {
     return (
-      <View
-        className="flex-1 bg-indigo-50 dark:bg-slate-950 items-center justify-center px-6"
-        style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
-      >
-        <View className="w-24 h-24 bg-indigo-100 dark:bg-indigo-900 rounded-full items-center justify-center mb-6">
-          <Text className="text-5xl">☕</Text>
-        </View>
-        <Text className="text-3xl font-black text-indigo-950 dark:text-white text-center mb-2">
-          All Caught Up!
+      <SafeAreaView className="flex-1 bg-indigo-50 dark:bg-slate-950 items-center justify-center p-8">
+        <Text className="text-6xl mb-6">☕</Text>
+        <Text className="text-2xl font-black dark:text-white text-center">
+          Thảnh thơi quá Phát ơi!
         </Text>
-        <Text className="text-slate-600 dark:text-slate-400 text-center mt-2 leading-6 mb-8">
-          Bạn không có thẻ nào cần ôn tập vào lúc này. Thuật toán đang để não bộ
-          của bạn được nghỉ ngơi!
+        <Text className="text-slate-500 text-center mt-4 mb-10 leading-6">
+          Bạn đã xử lý hết thẻ cần ôn tập. Hãy nghỉ ngơi để não bộ ghi nhớ tốt
+          hơn nhé.
         </Text>
         <TouchableOpacity
-          onPress={() => router.back()}
-          className="bg-indigo-600 px-8 py-4 rounded-2xl items-center shadow-lg"
-          activeOpacity={0.8}
+          onPress={() => router.replace("/")}
+          className="bg-indigo-600 w-full py-5 rounded-3xl shadow-lg"
         >
-          <Text className="text-white font-bold text-lg">
-            Quay lại danh sách
+          <Text className="text-white text-center font-black text-lg">
+            QUAY VỀ TRANG CHỦ
           </Text>
         </TouchableOpacity>
-      </View>
+      </SafeAreaView>
     );
   }
 
-  if (
-    currentIndex === -1 ||
-    (queue.length > 0 && completedCount === queue.length)
-  ) {
+  if (currentIndex >= filteredCards.length) {
     return (
-      <View
-        className="flex-1 bg-green-50 dark:bg-slate-950"
-        style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
-      >
-        <ScrollView
-          contentContainerStyle={{
-            flexGrow: 1,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-          className="flex-1 px-6"
-        >
-          <View
-            className="w-24 h-24 bg-green-400 rounded-full items-center justify-center mb-6"
-            style={{
-              elevation: 5,
-              shadowColor: "#4ade80",
-              shadowOpacity: 0.3,
-              shadowRadius: 5,
-            }}
-          >
-            <Text className="text-5xl">🎉</Text>
-          </View>
-          <Text className="text-4xl font-black text-green-950 dark:text-green-100 text-center mb-2">
-            Excellent!
-          </Text>
-          <Text className="text-slate-600 dark:text-slate-400 text-center mt-2 leading-6 mb-4">
-            You've completed all {queue.length} cards in this deck. Great
-            progress!
-          </Text>
-          <View
-            className="w-full bg-white dark:bg-slate-900 rounded-3xl p-6 mb-8"
-            style={{
-              elevation: 3,
-              shadowColor: "#000",
-              shadowOpacity: 0.1,
-              shadowRadius: 3,
-            }}
-          >
-            <Text className="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4">
-              Session Summary
+      <SafeAreaView className="flex-1 bg-white dark:bg-slate-950 items-center justify-center p-8">
+        <Text className="text-6xl mb-6">🎉</Text>
+        <Text className="text-3xl font-black dark:text-white text-center">
+          Hoàn thành phiên!
+        </Text>
+        <View className="flex-row gap-4 my-10 w-full">
+          <View className="bg-green-100 dark:bg-green-900/30 p-5 rounded-3xl flex-1 items-center border border-green-200">
+            <Text className="text-3xl font-black text-green-700 dark:text-green-400">
+              {sessionStats.known}
             </Text>
-            <View className="flex-row justify-between gap-4">
-              <View className="flex-1 bg-green-50 dark:bg-green-950 rounded-2xl p-4 items-center">
-                <Text className="text-2xl font-black text-green-600 dark:text-green-400">
-                  {completedCount}
-                </Text>
-                <Text className="text-xs text-green-600 dark:text-green-500 font-medium mt-1">
-                  Mastered
-                </Text>
-              </View>
-              <View className="flex-1 bg-blue-50 dark:bg-blue-950 rounded-2xl p-4 items-center">
-                <Text className="text-2xl font-black text-blue-600 dark:text-blue-400">
-                  {queue.length}
-                </Text>
-                <Text className="text-xs text-blue-600 dark:text-blue-500 font-medium mt-1">
-                  Total Cards
-                </Text>
-              </View>
-            </View>
+            <Text className="text-xs font-bold text-green-600 uppercase">
+              Know it
+            </Text>
           </View>
-          <TouchableOpacity
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.back();
-            }}
-            className="w-full bg-indigo-500 px-8 py-4 rounded-2xl items-center"
-            style={{
-              elevation: 3,
-              shadowColor: "#4F46E5",
-              shadowOpacity: 0.3,
-              shadowRadius: 3,
-            }}
-            activeOpacity={0.8}
-          >
-            <Text className="text-white font-bold text-lg">Back to Decks</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </View>
+          <View className="bg-orange-100 dark:bg-orange-900/30 p-5 rounded-3xl flex-1 items-center border border-orange-200">
+            <Text className="text-3xl font-black text-orange-700 dark:text-orange-400">
+              {sessionStats.learning}
+            </Text>
+            <Text className="text-xs font-bold text-orange-600 uppercase">
+              Learning
+            </Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          onPress={() => router.replace("/")}
+          className="bg-indigo-600 w-full py-5 rounded-3xl"
+        >
+          <Text className="text-white text-center font-black text-lg">
+            XONG
+          </Text>
+        </TouchableOpacity>
+      </SafeAreaView>
     );
   }
-
-  if (!currentCard) return null;
 
   return (
     <View
-      className="flex-1 bg-white dark:bg-slate-950"
-      style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+      style={{ paddingTop: insets.top }}
+      className="flex-1 bg-indigo-50 dark:bg-slate-950"
     >
-      <View className="px-6 pt-4 pb-6">
-        <TouchableOpacity
-          onPress={() => router.back()}
-          className="mb-4 self-start"
-        >
-          <Text className="text-2xl dark:text-white">←</Text>
+      <View className="px-6 py-4 flex-row justify-between items-center">
+        <TouchableOpacity onPress={() => router.back()}>
+          <Ionicons name="close" size={28} color="#64748b" />
         </TouchableOpacity>
-        <View className="flex-row justify-between items-center mb-3">
-          <Text className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-            PROGRESS
-          </Text>
-          <Text className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-            {completedCount}/{queue.length}
-          </Text>
-        </View>
-        <View className="h-3 w-full bg-indigo-100 dark:bg-slate-700 rounded-full overflow-hidden">
+        <View className="flex-1 mx-6 h-2 bg-white dark:bg-slate-800 rounded-full overflow-hidden">
           <View
             className="h-full bg-indigo-500"
-            style={{ width: `${progressPercentage}%` }}
+            style={{ width: `${(currentIndex / filteredCards.length) * 100}%` }}
           />
         </View>
-      </View>
-
-      <View className="flex-1 items-center justify-center px-6">
-        <Flashcard
-          key={currentCard.id}
-          term={currentCard.term}
-          definition={currentCard.definition}
-          onSwipe={(isMastered) => handleAnswer(isMastered)}
-        />
-        <Text className="text-slate-500 dark:text-slate-400 mt-8 text-sm font-medium">
-          Tap the card to reveal answer
+        <Text className="text-slate-500 font-bold">
+          {currentIndex + 1}/{filteredCards.length}
         </Text>
       </View>
-
-      <View className="px-6 pb-8 gap-3 mt-10">
+      <View className="flex-1 items-center justify-center px-6">
+        <Flashcard
+          key={filteredCards[currentIndex].id}
+          term={filteredCards[currentIndex].term}
+          definition={filteredCards[currentIndex].definition}
+          onSwipe={handleAnswer}
+        />
+      </View>
+      <View className="px-6 pb-12 gap-4">
         <TouchableOpacity
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            handleAnswer(false);
-          }}
-          disabled={isAnswering}
-          className="flex-row items-center justify-center bg-white dark:bg-slate-800 border-2 border-orange-200 dark:border-orange-900 p-5 rounded-3xl active:scale-95"
-          style={{
-            elevation: 2,
-            shadowColor: "#000",
-            shadowOpacity: 0.1,
-            shadowRadius: 3,
-          }}
-          activeOpacity={0.8}
+          onPress={() => handleAnswer(false)}
+          className="bg-white dark:bg-slate-800 border-2 border-orange-100 p-5 rounded-3xl items-center shadow-sm"
         >
-          <Text className="text-xl mr-2">🔄</Text>
-          <Text className="text-orange-600 dark:text-orange-400 font-bold text-base">
-            Learn Again
+          <Text className="text-orange-600 font-black text-lg">
+            Still learning
           </Text>
         </TouchableOpacity>
-
         <TouchableOpacity
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            handleAnswer(true);
-          }}
-          disabled={isAnswering}
-          className="flex-row items-center justify-center bg-green-500 p-5 rounded-3xl active:scale-95"
-          style={{
-            elevation: 3,
-            shadowColor: "#4ade80",
-            shadowOpacity: 0.3,
-            shadowRadius: 3,
-          }}
-          activeOpacity={0.8}
+          onPress={() => handleAnswer(true)}
+          className="bg-indigo-600 p-5 rounded-3xl items-center shadow-lg"
         >
-          {isAnswering ? (
-            <ActivityIndicator color="white" size="small" />
-          ) : (
-            <>
-              <Text className="text-xl mr-2">✓</Text>
-              <Text className="text-white font-bold text-base">Mastered</Text>
-            </>
-          )}
+          <Text className="text-white font-black text-lg">Know it</Text>
         </TouchableOpacity>
       </View>
     </View>

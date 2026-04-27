@@ -166,7 +166,13 @@ export default function Home() {
             data={allDecks}
             keyExtractor={(item) => item.id.toString()}
             renderItem={({ item }) => (
-              <Link href={`/study?id=${item.id}`} asChild>
+              <Link
+                href={{
+                  pathname: "/deck/[id]",
+                  params: { id: item.id },
+                }}
+                asChild
+              >
                 <TouchableOpacity
                   onPress={() => handleDeckPress(item.id)}
                   className="mx-5 mb-4 bg-white dark:bg-slate-900 rounded-3xl overflow-hidden active:scale-98"

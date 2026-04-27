@@ -72,9 +72,9 @@ export default function StudyScreen() {
 
   if (isLoading)
     return (
-      <View className="flex-1 items-center justify-center dark:bg-slate-950">
+      <SafeAreaView className="flex-1 items-center justify-center bg-indigo-50 dark:bg-slate-950">
         <ActivityIndicator size="large" color="#4F46E5" />
-      </View>
+      </SafeAreaView>
     );
 
   if (filteredCards.length === 0) {
@@ -82,18 +82,18 @@ export default function StudyScreen() {
       <SafeAreaView className="flex-1 bg-indigo-50 dark:bg-slate-950 items-center justify-center p-8">
         <Text className="text-6xl mb-6">☕</Text>
         <Text className="text-2xl font-black dark:text-white text-center">
-          Thảnh thơi quá Phát ơi!
+          All caught up!
         </Text>
         <Text className="text-slate-500 text-center mt-4 mb-10 leading-6">
-          Bạn đã xử lý hết thẻ cần ôn tập. Hãy nghỉ ngơi để não bộ ghi nhớ tốt
-          hơn nhé.
+          You've reviewed all due cards. Take a break — your brain is hard at
+          work!
         </Text>
         <TouchableOpacity
           onPress={() => router.replace("/")}
           className="bg-indigo-600 w-full py-5 rounded-3xl shadow-lg"
         >
           <Text className="text-white text-center font-black text-lg">
-            QUAY VỀ TRANG CHỦ
+            GO HOME
           </Text>
         </TouchableOpacity>
       </SafeAreaView>
@@ -105,7 +105,7 @@ export default function StudyScreen() {
       <SafeAreaView className="flex-1 bg-white dark:bg-slate-950 items-center justify-center p-8">
         <Text className="text-6xl mb-6">🎉</Text>
         <Text className="text-3xl font-black dark:text-white text-center">
-          Hoàn thành phiên!
+          Session Complete!
         </Text>
         <View className="flex-row gap-4 my-10 w-full">
           <View className="bg-green-100 dark:bg-green-900/30 p-5 rounded-3xl flex-1 items-center border border-green-200">
@@ -130,7 +130,7 @@ export default function StudyScreen() {
           className="bg-indigo-600 w-full py-5 rounded-3xl"
         >
           <Text className="text-white text-center font-black text-lg">
-            XONG
+            DONE
           </Text>
         </TouchableOpacity>
       </SafeAreaView>

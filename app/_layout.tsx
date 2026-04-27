@@ -11,9 +11,9 @@ import { useEffect } from "react";
 import { Text, View } from "react-native";
 import "react-native-reanimated";
 
-import { useColorScheme } from "@/components/useColorScheme";
 import "@/global.css";
 import { db, expoDb } from "@db/client";
+import { useColorScheme } from "nativewind";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 // --- DRIZZLE ORM DATABASE IMPORTS ---
@@ -54,7 +54,11 @@ export default function RootLayout() {
 }
 
 function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  const { colorScheme, setColorScheme } = useColorScheme();
+
+  useEffect(() => {
+    setColorScheme("dark");
+  }, []);
 
   const { success, error } = useMigrations(db, migrations);
 
@@ -63,9 +67,7 @@ function RootLayoutNav() {
   if (error) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <Text className="text-red-500 font-bold mb-2">
-          Lỗi khởi tạo Database:
-        </Text>
+        <Text className="text-red-500 font-bold mb-2">Database Error:</Text>
         <Text className="text-center px-4">{error.message}</Text>
       </View>
     );
@@ -74,9 +76,7 @@ function RootLayoutNav() {
   if (!success) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <Text className="font-semibold text-lg">
-          Đang thiết lập Database...
-        </Text>
+        <Text className="font-semibold text-lg">Setting up Database...</Text>
       </View>
     );
   }
